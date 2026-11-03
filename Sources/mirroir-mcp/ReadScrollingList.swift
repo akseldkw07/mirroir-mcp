@@ -26,14 +26,21 @@ enum ReadScrollingList {
     }
 
     /// Finger travel for the first page, as a share of the window height. Measured on
-    /// iPhone Mirroring (Settings): a slow swipe moves content about 2.2x the finger.
+    /// iPhone Mirroring (Settings): a slow swipe moved content 1.15-2.6x the finger,
+    /// varying between identical swipes, so every page is checked for overlap.
     static let initialStep = 0.2
+    /// Most the finger travel may grow from one page to the next: a longer swipe can
+    /// scroll disproportionately further (measured 1.15x, then 2.3x).
+    static let maxGrowth = 1.25
+    /// Swipes back tried when a page landed past the overlap.
+    static let recoveryTries = 2
     /// New content wanted per page (share of the window height): about half of the
     /// area between the fixed bars, so consecutive pages overlap by the other half.
     static let targetShare = 0.38
     /// Bounds on the adapted finger travel (share of the window height).
     static let minStep = 0.08, maxStep = 0.45
-    /// Long enough to stay under the flick threshold: no momentum tail.
+    /// Duration of the first swipe; later ones keep its finger speed (scroll distance
+    /// depends on speed). Slow enough to stay under the flick threshold: no momentum.
     static let swipeDurationMs = 1000
     /// Fixed chrome (navigation and tab bars) excluded from the overlap check.
     static let chromeShare = 0.12
@@ -63,14 +70,17 @@ enum ReadScrollingList {
 
         let x = windowSize.width / 2, mid = windowSize.height / 2, h = Double(windowSize.height)
         var step = h * initialStep
+        /// One slow swipe of `step` at the first swipe's finger speed; `up` reveals content below.
+        func swipe(up: Bool) -> String? {
+            let half = CGFloat(step / 2) * (up ? 1 : -1)
+            let duration = Int((Double(swipeDurationMs) * step / (h * initialStep)).rounded())
+            return input.swipe(fromX: x, fromY: mid + half, toX: x, toY: mid - half,
+                               durationMs: duration, cursorMode: nil)
+        }
         /// Swipe one page; nil if it didn't move (after one retry), or the new page.
         func next(after last: GrayFrame) -> Swift.Result<(png: Data, gray: GrayFrame)?, SwipeFailure> {
-            let half = CGFloat(step / 2)
             for _ in 1 ... 2 {
-                if let error = input.swipe(fromX: x, fromY: mid + half, toX: x, toY: mid - half,
-                                           durationMs: swipeDurationMs, cursorMode: nil) {
-                    return .failure(SwipeFailure(message: error))
-                }
+                if let error = swipe(up: true) { return .failure(SwipeFailure(message: error)) }
                 guard let page = shot() else { return .failure(SwipeFailure(message: nil)) }
                 if SwipeMovement.effect(before: last, after: page.gray, distance: step).moved {
                     return .success(page)
@@ -98,9 +108,11 @@ enum ReadScrollingList {
                     // Content moves a multiple of the finger that depends on the app:
                     // measure it, and aim the next swipe at half a screen of new rows.
                     let last = pages[pages.count - 1].gray
+                    var page = page
                     if let shift = contentShift(last, page.gray), shift > 0 {
                         let rows = Double(shift) * h / Double(page.gray.height)
-                        step = min(h * maxStep, max(h * minStep, h * targetShare * step / rows))
+                        let wanted = h * targetShare * step / rows
+                        step = min(h * maxStep, step * maxGrowth, max(h * minStep, wanted))
                     } else if let back = contentShift(page.gray, last), back > 0 {
                         // The content moved down: the last swipe pulled the list past its
                         // end and iOS let go. Keep the settled page instead; that's the end.
@@ -108,8 +120,20 @@ enum ReadScrollingList {
                         reachedEnd = true
                         break
                     } else {
-                        gaps.append(pages.count)
+                        // Past the overlap: swipe back half a step at a time for a page
+                        // that still overlaps the last one; it replaces the overshot page.
                         step = max(h * minStep, step / 2)
+                        var recovered = false
+                        for _ in 1 ... recoveryTries {
+                            if let error = swipe(up: false) { return .failed(error) }
+                            guard let back = shot() else { return .unverified }
+                            page = back
+                            if let shift = contentShift(last, back.gray), shift > 0 {
+                                recovered = true
+                                break
+                            }
+                        }
+                        if !recovered { gaps.append(pages.count) }
                     }
                     pages.append(page)
                 }
