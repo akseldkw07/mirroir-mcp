@@ -63,6 +63,9 @@ A compiled skill is a `.compiled.json` written next to its source (`check-about.
 git config core.hooksPath .githooks
 git submodule update --init   # .registre — the limitation-register gates
 brew install ripgrep          # required by .registre/limitation-gates.sh
+# The unit tests read skill and pattern fixtures from the skills repo (CI does the same):
+git clone https://github.com/jfarcand/mirroir-skills.git ../mirroir-skills
+mkdir -p .mirroir-mcp && ln -sfn "$(cd ../mirroir-skills && pwd)" .mirroir-mcp/skills
 ```
 
 This activates the `commit-msg` hook in `.githooks/` which enforces conventional commit format, max 2-line messages, and rejects `Co-Authored-By: Claude` lines. The `.registre` submodule carries the [llm-registre](https://github.com/dravr-ai/llm-registre) gates run at pre-push and in CI; `registre.toml` at the repo root configures them (private tracker, scanned extensions, `scan_dirs`, 500-line cap, inline clippy allow-list).
