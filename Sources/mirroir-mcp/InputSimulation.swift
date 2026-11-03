@@ -60,6 +60,8 @@ final class InputSimulation: Sendable {
     let keyPoster: any KeyEventPosting
     /// The pasteboard type_text pastes unmappable runs through.
     let pasteboard: any PasteboardAccessing
+    /// Which app owns a screen point, for the cover guard (`coverRefusal`).
+    let pointOwner: any PointOwnerLocating
     /// The target's PID right now, or nil when the target is not running.
     ///
     /// Resolved on every read rather than captured at init: the target can
@@ -84,8 +86,10 @@ final class InputSimulation: Sendable {
          heldInputPoster: any HeldInputPosting = CGEventHeldInputPoster(),
          pasteVerifier: (any ScreenDescribing)? = nil,
          keyPoster: any KeyEventPosting = CGEventKeyPoster(),
-         pasteboard: any PasteboardAccessing = GeneralPasteboard()) {
+         pasteboard: any PasteboardAccessing = GeneralPasteboard(),
+         pointOwner: any PointOwnerLocating = AccessibilityPointOwnerLocator()) {
         self.bridge = bridge
+        self.pointOwner = pointOwner
         // Every read behind a paste check or a Spotlight launch is one the
         // window kept its size across: launching from a landscape app rotates
         // the mirror while Spotlight opens.
@@ -220,6 +224,10 @@ final class InputSimulation: Sendable {
                 info = freshInfo
             }
         }
+        let point = CGPoint(x: info.position.x + CGFloat(x), y: info.position.y + CGFloat(y))
+        if let coverError = coverRefusalIfEnabled(screenPoints: [point], info: info, tag: tag) {
+            return (nil, changed, coverError)
+        }
         return (info, changed, nil)
     }
 
@@ -311,6 +319,13 @@ final class InputSimulation: Sendable {
             }
         }
 
+        let points = Self.swipeInputPoints(
+            from: CGPoint(x: info.position.x + CGFloat(fromX), y: info.position.y + CGFloat(fromY)),
+            to: CGPoint(x: info.position.x + CGFloat(toX), y: info.position.y + CGFloat(toY)))
+        if let coverError = coverRefusalIfEnabled(screenPoints: points, info: info, tag: "swipe") {
+            return coverError
+        }
+
         let saved = saveCursor(mode: override)
         defer { restoreCursor(saved) }
 
@@ -379,6 +394,10 @@ final class InputSimulation: Sendable {
 
         if let boundsError = validateBounds(x: toX, y: toY, info: info, tag: "drag") {
             return boundsError
+        }
+        let end = CGPoint(x: info.position.x + CGFloat(toX), y: info.position.y + CGFloat(toY))
+        if let coverError = coverRefusalIfEnabled(screenPoints: [end], info: info, tag: "drag") {
+            return coverError
         }
 
         let saved = saveCursor(mode: override)

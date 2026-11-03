@@ -93,6 +93,7 @@ Env-var names are derived from the camelCase key by inserting `_` before every u
 | `mirroringBundleID` | `"com.apple.ScreenContinuity"` | `MIRROIR_BUNDLE_ID` | Bundle ID of the window to target. Override to point at a stand-in app (e.g. FakeMirroring) for local/CI runs |
 | `mirroringProcessName` | `"iPhone Mirroring"` | `MIRROIR_PROCESS_NAME` | Process name of the target window, used alongside the bundle ID for window lookup |
 | `cursorFreeInput` | `false` | `MIRROIR_CURSOR_FREE` | Post mouse events directly to the target PID via `postToPid` instead of global HID posting. Works for regular macOS apps (e.g. FakeMirroring) for local integration tests without cursor interference, but NOT for iPhone Mirroring — per-process injection does not register taps there |
+| `coverGuard` | `true` | `MIRROIR_COVER_GUARD` | Before pointing input, ask accessibility which app owns each point it touches (tap point; swipe start, midpoint and end; drag end) and refuse, sending nothing, if it isn't the target. Window captures show the target even when covered, but HID input lands on whatever is on top. Skipped in `cursorFreeInput` mode |
 
 ## AI Provider Timeouts
 

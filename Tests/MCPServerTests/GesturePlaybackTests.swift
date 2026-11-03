@@ -157,7 +157,7 @@ final class GesturePlaybackTests: XCTestCase {
                                    senderResolver: FixedSenderResolver(senderID: senderID))
         let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
                                     touchSession: touchSession ?? TouchSession(poster: RecordingTouchPoster()),
-                                    gestureDevice: device)
+                                    gestureDevice: device, pointOwner: TargetOwnsEveryPoint())
         return (input, bridge)
     }
 
