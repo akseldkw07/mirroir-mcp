@@ -76,7 +76,7 @@ enum IPhoneMirroringTarget {
             profile: profile,
             bridge: bridge,
             input: InputSimulation(bridge: bridge, cursorMode: profile.cursorMode,
-                                   pasteVerifier: describers.ocr),
+                                   pasteVerifier: describers.ocr, recovery: .live),
             capture: capture,
             describer: describers.describer,
             ocrDescriber: describers.ocr,
