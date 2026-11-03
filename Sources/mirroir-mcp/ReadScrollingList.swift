@@ -25,15 +25,23 @@ enum ReadScrollingList {
         case read(Result)
     }
 
-    /// Finger travel per page, as a share of the window height. Slow swipes move
-    /// content about as far as the finger (no flick), so consecutive pages overlap.
-    static let pageStep = 0.4
+    /// Finger travel for the first page, as a share of the window height. Measured on
+    /// iPhone Mirroring (Settings): a slow swipe moves content about 2.2x the finger.
+    static let initialStep = 0.2
+    /// New content wanted per page (share of the window height): about half of the
+    /// area between the fixed bars, so consecutive pages overlap by the other half.
+    static let targetShare = 0.38
+    /// Bounds on the adapted finger travel (share of the window height).
+    static let minStep = 0.08, maxStep = 0.45
     /// Long enough to stay under the flick threshold: no momentum tail.
     static let swipeDurationMs = 1000
     /// Fixed chrome (navigation and tab bars) excluded from the overlap check.
     static let chromeShare = 0.12
     /// Overlap rows (share of the window height) needed to call two pages overlapping.
     static let minOverlapShare = 0.1
+    /// Share of foreground (text, icon) pixels that may differ at the true shift.
+    /// Measured on Settings: 0.14 at the true shift, 0.32 at the best look-alike row.
+    static let foregroundMatch = 0.2
 
     static func run(input: any InputProviding, capture: any ScreenCapturing, windowSize: CGSize,
                     maxPages: Int, fromTop: Bool,
@@ -53,18 +61,18 @@ enum ReadScrollingList {
         var pages = [first]
         var gaps: [Int] = []
 
-        let x = windowSize.width / 2
-        let half = windowSize.height * pageStep / 2, mid = windowSize.height / 2
+        let x = windowSize.width / 2, mid = windowSize.height / 2, h = Double(windowSize.height)
+        var step = h * initialStep
         /// Swipe one page; nil if it didn't move (after one retry), or the new page.
         func next(after last: GrayFrame) -> Swift.Result<(png: Data, gray: GrayFrame)?, SwipeFailure> {
+            let half = CGFloat(step / 2)
             for _ in 1 ... 2 {
                 if let error = input.swipe(fromX: x, fromY: mid + half, toX: x, toY: mid - half,
                                            durationMs: swipeDurationMs, cursorMode: nil) {
                     return .failure(SwipeFailure(message: error))
                 }
                 guard let page = shot() else { return .failure(SwipeFailure(message: nil)) }
-                let distance = Double(half * 2)
-                if SwipeMovement.effect(before: last, after: page.gray, distance: distance).moved {
+                if SwipeMovement.effect(before: last, after: page.gray, distance: step).moved {
                     return .success(page)
                 }
             }
@@ -87,8 +95,14 @@ enum ReadScrollingList {
                     gaps = gaps.filter { $0 < seen + 1 }
                     reachedEnd = true
                 } else {
-                    if contentShift(pages[pages.count - 1].gray, page.gray) == nil {
+                    // Content moves a multiple of the finger that depends on the app:
+                    // measure it, and aim the next swipe at half a screen of new rows.
+                    if let shift = contentShift(pages[pages.count - 1].gray, page.gray), shift > 0 {
+                        let rows = Double(shift) * h / Double(page.gray.height)
+                        step = min(h * maxStep, max(h * minStep, h * targetShare * step / rows))
+                    } else {
                         gaps.append(pages.count)
+                        step = max(h * minStep, step / 2)
                     }
                     pages.append(page)
                 }
@@ -122,27 +136,50 @@ enum ReadScrollingList {
     }
 
     /// How many rows the content moved up from `a` to `b`, or nil if they don't overlap.
-    /// Compares the content between the fixed bars (top and bottom `chromeShare`),
-    /// sampling every 4th column to keep it fast.
+    ///
+    /// Compares the content between the fixed bars (top and bottom `chromeShare`), and
+    /// only foreground pixels (far from their row's median: text, icons). Flat areas and
+    /// look-alike rows (icon, label, chevron) otherwise line up at the wrong shift. The
+    /// best shift wins if it matches; every 4th column is sampled to keep it fast.
     static func contentShift(_ a: GrayFrame, _ b: GrayFrame) -> Int? {
         guard a.width == b.width, a.height == b.height else { return nil }
         let top = Int(Double(a.height) * chromeShare)
         let bottom = a.height - top
         let minOverlap = max(1, Int(Double(a.height) * minOverlapShare))
         guard bottom - top > minOverlap else { return nil }
+        let columns = Array(stride(from: 0, to: a.width, by: 4))
+        let minForeground = 3 * columns.count
+        let fgA = foreground(a, columns), fgB = foreground(b, columns)
+        var best: (ratio: Double, shift: Int)?
         for shift in 0 ... (bottom - top - minOverlap) {
             var changed = 0, total = 0
             for row in top ..< (bottom - shift) {
                 let rowA = (row + shift) * a.width, rowB = row * b.width
-                for column in stride(from: 0, to: a.width, by: 4) {
+                for (k, column) in columns.enumerated()
+                where fgA[(row + shift) * columns.count + k] || fgB[row * columns.count + k] {
                     total += 1
                     if abs(Int(a.pixels[rowA + column]) - Int(b.pixels[rowB + column]))
                         > SwipeMovement.pixelThreshold { changed += 1 }
                 }
             }
-            if total > 0, Double(changed) / Double(total) < SwipeMovement.nudgeMatch { return shift }
+            guard total >= minForeground else { continue }
+            let ratio = Double(changed) / Double(total)
+            if ratio < (best?.ratio ?? .infinity) { best = (ratio, shift) }
         }
-        return nil
+        guard let best, best.ratio < foregroundMatch else { return nil }
+        return best.shift
+    }
+
+    /// Per sampled pixel (row-major over `columns`): far from its row's median.
+    private static func foreground(_ frame: GrayFrame, _ columns: [Int]) -> [Bool] {
+        var mask = [Bool]()
+        mask.reserveCapacity(frame.height * columns.count)
+        for row in 0 ..< frame.height {
+            let values = columns.map { Int(frame.pixels[row * frame.width + $0]) }
+            let median = values.sorted()[values.count / 2]
+            mask += values.map { abs($0 - median) > SwipeMovement.pixelThreshold }
+        }
+        return mask
     }
 
     /// The one-line summary that precedes the page images.

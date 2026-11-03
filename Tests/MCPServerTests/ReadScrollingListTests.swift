@@ -22,10 +22,10 @@ final class ReadScrollingListTests: XCTestCase {
         input = StubInput()
     }
 
-    /// Row shades of one long list.
+    /// One long list of pseudo-random pixels (texture in every row, like text).
     private lazy var list: [UInt8] = {
         var state: UInt64 = 0x9E37_79B9_7F4A_7C15
-        return (0 ..< 1000).map { _ in
+        return (0 ..< 1000 * width).map { _ in
             state ^= state << 13; state ^= state >> 7; state ^= state << 17
             return UInt8(truncatingIfNeeded: state >> 24)
         }
@@ -33,9 +33,12 @@ final class ReadScrollingListTests: XCTestCase {
 
     /// The screen scrolled `offset` rows down the list.
     private func page(_ offset: Int) -> GrayFrame {
-        var pixels = [UInt8]()
-        for row in 0 ..< height { pixels += Array(repeating: list[row + offset], count: width) }
-        return GrayFrame(width: width, height: height, pixels: pixels)
+        GrayFrame(width: width, height: height,
+                  pixels: Array(list[(offset * width) ..< ((offset + height) * width)]))
+    }
+
+    private func flat(_ shade: UInt8) -> GrayFrame {
+        GrayFrame(width: width, height: height, pixels: Array(repeating: shade, count: width * height))
     }
 
     private func png(_ frame: GrayFrame) throws -> Data {
@@ -85,6 +88,11 @@ final class ReadScrollingListTests: XCTestCase {
         XCTAssertNil(ReadScrollingList.contentShift(page(0), page(95)))
     }
 
+    func testFlatScreensAreNoEvidenceOfOverlap() {
+        // Measured: dark-mode Settings has large flat areas that line up at any shift.
+        XCTAssertNil(ReadScrollingList.contentShift(flat(10), flat(10)))
+    }
+
     // MARK: - Reading
 
     func testReadsToTheEnd() throws {
@@ -126,6 +134,18 @@ final class ReadScrollingListTests: XCTestCase {
         XCTAssertEqual(input.tapCalls.count, 2, "scroll_to_top: two still taps")
         XCTAssertEqual(result.pages.count, 1)
         XCTAssertTrue(result.reachedEnd)
+    }
+
+    func testStepAdaptsToHowFarContentMoves() throws {
+        // The first swipe (a fifth of the window) moved the content 50 rows, 2.5x the
+        // finger: the next swipe is shorter, aiming at about half a screen of new rows.
+        _ = try read([0, 50, 65, 65, 65])
+        let swipes = input.swipeCalls
+        XCTAssertGreaterThanOrEqual(swipes.count, 2)
+        let first = swipes[0].fromY - swipes[0].toY, second = swipes[1].fromY - swipes[1].toY
+        XCTAssertEqual(first, Double(height) * ReadScrollingList.initialStep, accuracy: 0.5)
+        XCTAssertLessThan(second, first)
+        XCTAssertEqual(second, Double(height) * ReadScrollingList.targetShare / 2.5, accuracy: 1)
     }
 
     func testSwipesWithTheFingerMovingUpSlowly() throws {
