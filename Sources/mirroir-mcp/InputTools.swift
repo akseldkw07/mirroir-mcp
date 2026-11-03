@@ -99,7 +99,9 @@ extension MirroirMCP {
                 (scroll up), swipe left to reveal content on the right. \
                 Fast swipes (short duration_ms) end with flick momentum, so \
                 paging surfaces like video feeds snap to the next page; use a \
-                long duration_ms for a slow precise scroll without inertia.
+                long duration_ms for a slow precise scroll without inertia. \
+                The result says whether the screen moved (diff_ratio below the \
+                status bar); a swipe that moved nothing is retried once.
                 """,
             inputSchema: [
                 "type": .string("object"),
@@ -154,17 +156,17 @@ extension MirroirMCP {
                 case .invalid(let msg): return .error(msg)
                 }
 
-                if let error = input.swipe(
-                    fromX: fromX, fromY: fromY,
-                    toX: toX, toY: toY,
-                    durationMs: duration,
-                    cursorMode: cursorMode
+                // Compare captures before and after, so a dropped gesture or the
+                // end of a list reads as "did not change" rather than a bare "Swiped".
+                let outcome = SwipeVerifier.run(
+                    capture: ctx.capture, distance: max(abs(toX - fromX), abs(toY - fromY))
                 ) {
-                    return .error(error)
+                    input.swipe(fromX: fromX, fromY: fromY, toX: toX, toY: toY,
+                                durationMs: duration, cursorMode: cursorMode)
                 }
-                return .text(
-                    "Swiped from (\(Int(fromX)),\(Int(fromY))) to (\(Int(toX)),\(Int(toY)))"
-                )
+                if case .failed(let error) = outcome { return .error(error) }
+                return .text(SwipeVerifier.message(
+                    outcome, from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY)) ?? "")
             }
         ))
 
