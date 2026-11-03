@@ -160,6 +160,37 @@ final class ReadScrollingListTests: XCTestCase {
         XCTAssertEqual(second, Double(height) * ReadScrollingList.targetShare / 2.5, accuracy: 1)
     }
 
+    func testOvershootIsRecoveredBySwipingBack() throws {
+        // Measured on Settings: the scroll per swipe varied 1.15-2.6x, so a page can
+        // land past the overlap (offset 95). Swiping back half a step (offset 50)
+        // gives a page that overlaps the last one; it replaces the overshot page.
+        let result = try result(try read([0, 95, 50, 90, 90, 90]))
+        XCTAssertEqual(result.gaps, [])
+        XCTAssertEqual(result.pages.count, 3)
+        let second = try XCTUnwrap(GrayFrame(png: result.pages[1], size: CGSize(width: width, height: height)))
+        XCTAssertLessThan(SwipeMovement.diffRatio(second, page(50)), 0.01)
+        XCTAssertTrue(input.swipeCalls.contains { $0.fromY < $0.toY }, "a swipe back (finger down)")
+    }
+
+    func testStepGrowthIsCapped() throws {
+        // Content moved half the finger (10 rows for 20): the next swipe may grow, but
+        // only by maxGrowth, since a longer swipe can scroll disproportionately further.
+        _ = try read([0, 10, 30, 30, 30])
+        let swipes = input.swipeCalls
+        let first = swipes[0].fromY - swipes[0].toY, second = swipes[1].fromY - swipes[1].toY
+        XCTAssertEqual(second, first * ReadScrollingList.maxGrowth, accuracy: 0.5)
+    }
+
+    func testFingerSpeedIsConstant() throws {
+        // Scroll distance depends on swipe speed: a longer swipe takes longer.
+        _ = try read([0, 10, 30, 30, 30])
+        let swipes = input.swipeCalls
+        let first = swipes[0], second = swipes[1]
+        let speed = { (s: SwipeCall) in (s.fromY - s.toY) / Double(s.durationMs) }
+        XCTAssertEqual(speed(first), speed(second), accuracy: speed(first) * 0.02)
+        XCTAssertEqual(first.durationMs, ReadScrollingList.swipeDurationMs)
+    }
+
     func testSwipesWithTheFingerMovingUpSlowly() throws {
         _ = try read([0, 40, 40, 40])
         let swipe = try XCTUnwrap(input.swipeCalls.first)
