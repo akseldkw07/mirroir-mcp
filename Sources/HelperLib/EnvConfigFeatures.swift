@@ -428,4 +428,10 @@ extension EnvConfig {
     public static var cursorFreeInput: Bool {
         readBool("cursorFreeInput", envVar: "MIRROIR_CURSOR_FREE", default: false)
     }
+
+    /// Refuse pointing input when an accessibility hit-test says another app
+    /// owns a point it would touch (see `InputSimulation.coverRefusal`).
+    public static var coverGuard: Bool {
+        readBool("coverGuard", envVar: "MIRROIR_COVER_GUARD", default: true)
+    }
 }

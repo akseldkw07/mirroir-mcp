@@ -310,7 +310,8 @@ final class HeldKeysPlaybackTests: XCTestCase {
         // activating a window on the Mac running the tests.
         bridge.state = .notRunning
         return InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
-                               touchSession: touchSession, heldInputPoster: poster)
+                               touchSession: touchSession, heldInputPoster: poster,
+                               pointOwner: TargetOwnsEveryPoint())
     }
 
     func testHoldKeysRefusesWhileATouchIsHeld() throws {
@@ -349,7 +350,7 @@ final class HeldKeysPlaybackTests: XCTestCase {
                                        size: CGSize(width: 410, height: 898), pid: 1)
         let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
                                     touchSession: TouchSession(poster: RecordingTouchPoster()),
-                                    heldInputPoster: poster)
+                                    heldInputPoster: poster, pointOwner: TargetOwnsEveryPoint())
         return (input, bridge)
     }
 

@@ -10,6 +10,15 @@ import Foundation
 import HelperLib
 @testable import mirroir_mcp
 
+// MARK: - TargetOwnsEveryPoint
+
+/// Cover-guard stand-in: the target (StubBridge's window pid 1) owns every
+/// screen point, so pointing tests don't depend on what is on the test Mac's screen.
+struct TargetOwnsEveryPoint: PointOwnerLocating {
+    var pid: pid_t = 1
+    func owner(at point: CGPoint) -> PointOwner? { PointOwner(pid: pid, name: "target") }
+}
+
 // MARK: - StubBridge
 
 final class StubBridge: MenuActionCapable, @unchecked Sendable {
