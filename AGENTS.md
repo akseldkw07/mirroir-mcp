@@ -59,6 +59,18 @@ A compiled skill is a `.compiled.json` written next to its source (`check-about.
 
 ## Setup After Clone
 
+**In the akseldkw07 fork, run this instead of upstream's first line:**
+
+```bash
+pre-commit install   # black, pyright, and the shared push/merge hooks (deploy on main)
+```
+
+The fork's `.pre-commit-config.yaml` is mcp-utils' shared `fork-block.yaml`, and its
+`default_install_hook_types` makes that one command install the pre-commit, pre-push and
+post-merge hooks. Don't set `core.hooksPath`: git would then skip `.git/hooks`, so none of the
+pre-commit hooks would run. Check with `ls .git/hooks/pre-commit`. The rest of upstream's
+setup (submodule, ripgrep, skills fixtures) still applies:
+
 ```bash
 git config core.hooksPath .githooks
 git submodule update --init   # .registre — the limitation-register gates
