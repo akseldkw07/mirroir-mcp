@@ -55,41 +55,50 @@ final class ScrollToTopTests: XCTestCase {
                        CGPoint(x: 59, y: 58))
     }
 
-    func testProbeSwipesTheFingerDownTowardTheTop() {
-        let probe = ScrollToTop.probe(windowSize: CGSize(width: 400, height: 1000))
-        XCTAssertEqual(probe.from, CGPoint(x: 200, y: 300))
-        XCTAssertEqual(probe.to, CGPoint(x: 200, y: 700))
-    }
+    // Frames: the capture before the first tap, then one capture per tap.
 
-    func testAlreadyAtTopAfterOneTap() throws {
-        // Every frame is the same screen: the probe (and its retry) can't move it.
+    func testAlreadyAtTopTakesTwoStillTaps() throws {
         let outcome = try run([1])
-        XCTAssertEqual(outcome, .done(atTop: true, taps: 1, effect: SwipeEffect(moved: false, diffRatio: 0)))
-        XCTAssertEqual(input.tapCalls.count, 1)
-        XCTAssertEqual(input.swipeCalls.count, 2)
+        XCTAssertEqual(outcome, .done(atTop: true, taps: 2, effect: SwipeEffect(moved: false, diffRatio: 0)))
+        XCTAssertEqual(input.tapCalls.count, 2)
     }
 
-    func testLostTapIsRetried() throws {
-        // before, probe-before, probe moved (the first tap was lost), then still.
+    func testScrollsThenConfirmsWithTwoStillTaps() throws {
+        let outcome = try run([1, 2])
+        guard case .done(let atTop, let taps, let effect) = outcome else {
+            return XCTFail("expected done, got \(outcome)")
+        }
+        XCTAssertTrue(atTop)
+        XCTAssertEqual(taps, 3)
+        XCTAssertEqual(effect?.moved, true)
+    }
+
+    func testLostFirstTapIsNotTakenForTheTop() throws {
+        // The first tap changes nothing (lost), the second scrolls, then two still taps.
         let outcome = try run([1, 1, 2])
         guard case .done(let atTop, let taps, let effect) = outcome else {
             return XCTFail("expected done, got \(outcome)")
         }
         XCTAssertTrue(atTop)
-        XCTAssertEqual(taps, 2)
+        XCTAssertEqual(taps, 4)
         XCTAssertEqual(effect?.moved, true)
-        XCTAssertEqual(input.tapCalls.count, 2)
     }
 
-    func testGivesUpAfterThreeTaps() throws {
-        // A new screen on every capture: the probe always moves.
+    func testGivesUpWhenTheScreenKeepsChanging() throws {
         let outcome = try run(Array(1 ... 20))
         guard case .done(let atTop, let taps, _) = outcome else {
             return XCTFail("expected done, got \(outcome)")
         }
         XCTAssertFalse(atTop)
-        XCTAssertEqual(taps, 3)
-        XCTAssertEqual(input.tapCalls.count, 3)
+        XCTAssertEqual(taps, ScrollToTop.maxTaps)
+        XCTAssertEqual(input.tapCalls.count, ScrollToTop.maxTaps)
+    }
+
+    func testNeverSwipes() throws {
+        // A probe swipe at the top stretches headers and holds overscroll, which
+        // reads as movement (measured on a Phone app contact card).
+        _ = try run([1, 2])
+        XCTAssertTrue(input.swipeCalls.isEmpty)
     }
 
     func testTapErrorStopsWithoutSwiping() throws {
@@ -127,14 +136,16 @@ final class ScrollToTopTests: XCTestCase {
 
     func testMessages() {
         XCTAssertEqual(
-            ScrollToTop.message(.done(atTop: true, taps: 1, effect: SwipeEffect(moved: true, diffRatio: 0.4))),
-            "At the top of the list (checked after 1 tap); the screen moved (diff_ratio 0.4).")
+            ScrollToTop.message(.done(atTop: true, taps: 3, effect: SwipeEffect(moved: true, diffRatio: 0.4))),
+            "At the top of the list (2 status-bar taps in a row changed nothing; 3 taps); "
+                + "the screen moved (diff_ratio 0.4).")
         XCTAssertEqual(
             ScrollToTop.message(.done(atTop: true, taps: 2, effect: SwipeEffect(moved: false, diffRatio: 0))),
-            "At the top of the list (checked after 2 taps); it was already there.")
+            "At the top of the list (2 status-bar taps in a row changed nothing; 2 taps); "
+                + "it was already there.")
         XCTAssertEqual(
-            ScrollToTop.message(.done(atTop: false, taps: 3, effect: SwipeEffect(moved: true, diffRatio: 0.3))),
-            "Not verified at the top: after 3 status-bar taps the list still scrolls up.")
+            ScrollToTop.message(.done(atTop: false, taps: 4, effect: SwipeEffect(moved: true, diffRatio: 0.3))),
+            "Not verified at the top: the screen still changed after 4 status-bar taps.")
         XCTAssertEqual(
             ScrollToTop.message(.done(atTop: false, taps: 1, effect: nil)),
             "Tapped the status bar; not verified: the screen could not be captured.")

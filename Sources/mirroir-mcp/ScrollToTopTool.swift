@@ -13,9 +13,9 @@ extension MirroirMCP {
             name: "scroll_to_top",
             description: """
                 Scroll the current list on the mirrored iPhone back to its top by tapping \
-                the status-bar clock. Taps are sometimes lost, so it checks with an upward \
-                swipe: if the list still follows, it taps again (up to 3 times). The result \
-                says whether the top was verified and whether the screen moved.
+                the status-bar clock. Taps are sometimes lost, so it taps until two taps in \
+                a row change nothing (up to 4 taps). The result says whether the top was \
+                verified and whether the screen moved.
                 """,
             inputSchema: [
                 "type": .string("object"),

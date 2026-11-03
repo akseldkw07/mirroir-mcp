@@ -1,26 +1,33 @@
 // Copyright 2026 jfarcand@apache.org
 // Licensed under the Apache License, Version 2.0
 //
-// ABOUTME: scroll_to_top: taps the iOS status-bar clock and checks the list reached its top.
-// ABOUTME: Taps get lost, so an upward probe swipe verifies it; still moving means tap again (up to 3).
+// ABOUTME: scroll_to_top: taps the iOS status-bar clock until two taps in a row change nothing.
+// ABOUTME: Taps get lost, so one still tap isn't proof; a probe swipe isn't either (overscroll holds).
 
 import CoreGraphics
 import Foundation
 import HelperLib
 
 /// Scroll the frontmost iOS list back to its top (pure orchestration over input and capture).
+///
+/// A status-bar tap at the top of a list changes nothing, so two still taps in
+/// a row mean the top (or two lost taps in a row, which is rare). Verifying with
+/// a probe swipe instead was measured to fail: pulling down at the top stretches
+/// headers (e.g. a Phone app contact card) and iOS can hold the overscroll, so the
+/// probe always reads as movement.
 enum ScrollToTop {
     enum Outcome: Equatable {
-        /// A tap or swipe was refused or failed.
+        /// A tap was refused or failed.
         case failed(String)
-        /// `atTop` is whether the probe confirmed the top; `effect` compares the
-        /// screen before the first tap with the end (nil when it couldn't be captured).
+        /// `atTop` is whether two taps in a row changed nothing; `effect` compares
+        /// the screen before the first tap with the end (nil when it couldn't be captured).
         case done(atTop: Bool, taps: Int, effect: SwipeEffect?)
     }
 
-    static let maxTaps = 3
-    /// Pause after a tap: the scroll-to-top animation, and Mirroring tends to drop
-    /// a gesture sent right after a tap.
+    static let maxTaps = 4
+    /// Taps in a row that must leave the screen unchanged.
+    static let stillTapsNeeded = 2
+    /// Pause after a tap for the scroll-to-top animation to start.
     static let tapSettleUs: UInt32 = 600_000
 
     /// The status-bar clock, in window points. Measured on the iPhone Mirroring
@@ -29,50 +36,33 @@ enum ScrollToTop {
         CGPoint(x: (windowSize.width * 0.176).rounded(), y: (windowSize.height * 0.08).rounded())
     }
 
-    /// The probe: the finger moves down through the middle of the screen, which
-    /// scrolls toward the top. At the top it only rubber-bands and settles back.
-    static func probe(windowSize: CGSize) -> (from: CGPoint, to: CGPoint) {
-        let x = windowSize.width / 2, mid = windowSize.height / 2, half = windowSize.height * 0.2
-        return (CGPoint(x: x, y: mid - half), CGPoint(x: x, y: mid + half))
-    }
-
     static func run(input: any InputProviding, capture: any ScreenCapturing, windowSize: CGSize,
                     settleTimeoutUs: UInt32 = EnvConfig.frameSettleTimeoutUs,
                     pause: (UInt32) -> Void = { usleep($0) }) -> Outcome {
-        let before = capture.captureWithInfo().flatMap { GrayFrame(png: $0.data, size: $0.info.size) }
+        let first = capture.captureWithInfo().flatMap { GrayFrame(png: $0.data, size: $0.info.size) }
         let clock = clockPoint(windowSize: windowSize)
-        let (from, to) = probe(windowSize: windowSize)
+        var previous = first
+        var still = 0
         for tap in 1 ... maxTaps {
             if let error = input.tap(x: clock.x, y: clock.y, cursorMode: nil) { return .failed(error) }
             pause(tapSettleUs)
-            let probed = SwipeVerifier.run(capture: capture, distance: to.y - from.y,
-                                           settleTimeoutUs: settleTimeoutUs) {
-                input.swipe(fromX: from.x, fromY: from.y, toX: to.x, toY: to.y,
-                            durationMs: EnvConfig.defaultSwipeDurationMs, cursorMode: nil)
-            }
-            switch probed {
-            case .failed(let error):
-                return .failed(error)
-            case .unverified:
-                return .done(atTop: false, taps: tap, effect: nil)
-            case .verified(let effect, _) where !effect.moved:
-                return .done(atTop: true, taps: tap, effect: overall(before, capture, settleTimeoutUs))
-            case .verified:
-                continue
+            guard let prior = previous,
+                  let shot = capture.captureSettledWithInfo(timeoutUs: settleTimeoutUs),
+                  let current = GrayFrame(png: shot.data, size: shot.info.size),
+                  current.width == prior.width, current.height == prior.height
+            else { return .done(atTop: false, taps: tap, effect: nil) }
+            still = SwipeMovement.effect(before: prior, after: current, distance: 0).moved ? 0 : still + 1
+            previous = current
+            if still >= stillTapsNeeded {
+                return .done(atTop: true, taps: tap, effect: overall(first, current))
             }
         }
-        return .done(atTop: false, taps: maxTaps, effect: overall(before, capture, settleTimeoutUs))
+        return .done(atTop: false, taps: maxTaps, effect: previous.flatMap { overall(first, $0) })
     }
 
     /// The screen at the end compared with the screen before the first tap.
-    private static func overall(_ before: GrayFrame?, _ capture: any ScreenCapturing,
-                                _ settleTimeoutUs: UInt32) -> SwipeEffect? {
-        guard let before,
-              let shot = capture.captureSettledWithInfo(timeoutUs: settleTimeoutUs),
-              let after = GrayFrame(png: shot.data, size: shot.info.size),
-              after.width == before.width, after.height == before.height
-        else { return nil }
-        return SwipeMovement.effect(before: before, after: after, distance: 0)
+    private static func overall(_ first: GrayFrame?, _ last: GrayFrame) -> SwipeEffect? {
+        first.map { SwipeMovement.effect(before: $0, after: last, distance: 0) }
     }
 
     /// The tool's result text (nil for `.failed`, which is an error).
@@ -82,9 +72,10 @@ enum ScrollToTop {
             return "Tapped the status bar; not verified: the screen could not be captured."
         }
         guard atTop else {
-            return "Not verified at the top: after \(taps) status-bar taps the list still scrolls up."
+            return "Not verified at the top: the screen still changed after \(taps) status-bar taps."
         }
-        let checked = "At the top of the list (checked after \(taps) tap\(taps == 1 ? "" : "s"))"
+        let checked = "At the top of the list (\(stillTapsNeeded) status-bar taps in a row changed "
+            + "nothing; \(taps) taps)"
         return effect.moved
             ? "\(checked); the screen moved (diff_ratio \(effect.diffRatio))."
             : "\(checked); it was already there."
