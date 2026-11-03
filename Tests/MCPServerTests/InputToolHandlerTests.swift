@@ -94,6 +94,27 @@ final class InputToolHandlerTests: XCTestCase {
         XCTAssertTrue(text?.contains("Swiped from") ?? false)
     }
 
+    func testSwipeWithoutCaptureSaysNotVerified() {
+        input.swipeResult = nil
+        let response = callTool("swipe", args: [
+            "from_x": .number(100), "from_y": .number(600),
+            "to_x": .number(100), "to_y": .number(200),
+        ])
+        XCTAssertFalse(isError(response))
+        XCTAssertEqual(extractText(response),
+                       "Swiped from (100,600) to (100,200); not verified: the screen could not be captured.")
+    }
+
+    func testSwipeErrorIsReported() {
+        input.swipeResult = "covered"
+        let response = callTool("swipe", args: [
+            "from_x": .number(100), "from_y": .number(600),
+            "to_x": .number(100), "to_y": .number(200),
+        ])
+        XCTAssertTrue(isError(response))
+        XCTAssertEqual(extractText(response), "covered")
+    }
+
     // MARK: - drag
 
     func testDragMissingParams() {
