@@ -100,6 +100,9 @@ protocol SessionEscapePlugin: Sendable {
 
 /// Abstracts user input simulation (tap, swipe, type, etc.) via CGEvent.
 protocol InputProviding: Sendable {
+    /// Get the target ready for input (e.g. open iPhone Mirroring). Returns nil when ready,
+    /// else why not. For tools that read the window before any input.
+    func prepareTarget(tag: String) -> String?
     func tap(x: Double, y: Double, cursorMode: CursorMode?) -> String?
     func swipe(fromX: Double, fromY: Double, toX: Double, toY: Double,
                durationMs: Int, cursorMode: CursorMode?) -> String?
@@ -222,6 +225,7 @@ protocol TouchContactPosting: PointerEngaging {
 
 /// Default nil cursorMode for backward compatibility.
 extension InputProviding {
+    func prepareTarget(tag: String) -> String? { nil }
     func tap(x: Double, y: Double) -> String? {
         tap(x: x, y: y, cursorMode: nil)
     }

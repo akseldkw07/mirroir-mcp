@@ -35,6 +35,8 @@ extension MirroirMCP {
             handler: { args in
                 let (ctx, err) = registry.resolveForTool(args)
                 guard let ctx else { return err! }
+                // Opens iPhone Mirroring if it isn't running (the window lookup below needs it).
+                if let error = ctx.input.prepareTarget(tag: "read_scrolling_list") { return .error(error) }
                 guard let window = ctx.bridge.getWindowInfo() else {
                     return .error("Target '\(ctx.name)' window not found")
                 }

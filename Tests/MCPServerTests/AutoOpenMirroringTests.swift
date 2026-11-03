@@ -82,6 +82,13 @@ final class AutoOpenMirroringTests: XCTestCase {
         XCTAssertEqual(launcher.launches, 1)
     }
 
+    func testPrepareTargetOpensMirroring() {
+        // scroll_to_top and read_scrolling_list call this before they look up the window.
+        bridge.state = .notRunning
+        XCTAssertNil(input(launcher: launcher).prepareTarget(tag: "scroll_to_top"))
+        XCTAssertEqual(launcher.launches, 1)
+    }
+
     func testConnectedIsNotLaunched() {
         bridge.state = .connected
         XCTAssertNil(input(launcher: launcher).ensureConnected(tag: "tap"))

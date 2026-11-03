@@ -58,6 +58,11 @@ struct MirroringRecovery: Sendable {
 
 extension InputSimulation {
 
+    /// Ready for input: open the app or press Connect if needed (the `ensureConnected` preamble).
+    func prepareTarget(tag: String) -> String? {
+        ensureConnected(tag: tag)
+    }
+
     /// Open the mirroring app if it isn't running or has no window, and wait for its window.
     /// Returns nil when there's nothing to do or it opened, else what went wrong.
     func openMirroringIfNeeded(tag: String) -> String? {

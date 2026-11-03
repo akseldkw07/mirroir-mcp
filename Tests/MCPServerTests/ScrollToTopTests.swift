@@ -134,6 +134,24 @@ final class ScrollToTopTests: XCTestCase {
         XCTAssertEqual(input.tapCalls.count, 1)
     }
 
+    func testToolPreparesTheTargetFirst() {
+        // Opening iPhone Mirroring happens in prepareTarget; its error stops the tool.
+        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil))
+        input.prepareResult = "Couldn't open iPhone Mirroring"
+        MirroirMCP.registerScrollToTopTool(
+            server: server, registry: makeTestRegistry(bridge: StubBridge(), input: input))
+        let response = server.handleRequest(JSONRPCRequest(
+            jsonrpc: "2.0", id: .number(1), method: "tools/call",
+            params: .object(["name": .string("scroll_to_top"), "arguments": .object([:])])))
+        guard case .object(let result) = response?.result, case .bool(true) = result["isError"],
+              case .array(let content) = result["content"], case .object(let first) = content.first,
+              case .string(let text) = first["text"] else {
+            return XCTFail("expected an error result: \(String(describing: response))")
+        }
+        XCTAssertEqual(text, "Couldn't open iPhone Mirroring")
+        XCTAssertEqual(input.tapCalls.count, 0)
+    }
+
     func testMessages() {
         XCTAssertEqual(
             ScrollToTop.message(.done(atTop: true, taps: 3, effect: SwipeEffect(moved: true, diffRatio: 0.4))),

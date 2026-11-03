@@ -99,6 +99,13 @@ struct SwipeCall {
 
 final class StubInput: InputProviding, @unchecked Sendable {
     var tapResult: String?
+    /// What `prepareTarget` reports (nil = ready), and how often it was asked.
+    var prepareResult: String?
+    private(set) var prepareCalls = 0
+    func prepareTarget(tag: String) -> String? {
+        prepareCalls += 1
+        return prepareResult
+    }
     var swipeResult: String?
     var dragResult: String?
     var longPressResult: String?

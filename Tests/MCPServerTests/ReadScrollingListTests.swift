@@ -242,6 +242,21 @@ final class ReadScrollingListTests: XCTestCase {
         XCTAssertEqual(type, "image")
     }
 
+    func testToolPreparesTheTargetFirst() {
+        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil))
+        input.prepareResult = "Couldn't open iPhone Mirroring"
+        MirroirMCP.registerReadScrollingListTool(
+            server: server, registry: makeTestRegistry(bridge: StubBridge(), input: input))
+        let response = server.handleRequest(JSONRPCRequest(
+            jsonrpc: "2.0", id: .number(1), method: "tools/call",
+            params: .object(["name": .string("read_scrolling_list"), "arguments": .object([:])])))
+        guard case .object(let result) = response?.result, case .bool(true) = result["isError"] else {
+            return XCTFail("expected an error result: \(String(describing: response))")
+        }
+        XCTAssertEqual(input.prepareCalls, 1)
+        XCTAssertTrue(input.swipeCalls.isEmpty)
+    }
+
     // MARK: - Summary
 
     func testSummaryText() {
