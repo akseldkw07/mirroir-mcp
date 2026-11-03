@@ -1,6 +1,6 @@
 # Tools Reference
 
-All 38 tools exposed by the MCP server. Mutating tools require [permission](permissions.md) to appear in `tools/list`.
+All 39 tools exposed by the MCP server. Mutating tools require [permission](permissions.md) to appear in `tools/list`.
 
 ## Tool List
 
@@ -29,6 +29,7 @@ All 38 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `press_back` | — | Navigate back by OCR-tapping the `<` back chevron, with a canonical-position fallback |
 | `spotlight` | — | Open Spotlight search |
 | `scroll_to` | `label`, `direction`?, `max_scrolls`? | Scroll until a text element becomes visible via OCR |
+| `scroll_to_top` | — | Scroll the current list back to its top by tapping the status-bar clock; an upward probe swipe verifies it and lost taps are retried (up to 3). Reports whether the top was verified |
 | `reset_app` | `name` | Force-quit an app via the App Switcher |
 | `measure` | `action`, `until`, `max_seconds`?, `name`? | Time a screen transition after an action |
 | `set_network` | `mode` | Toggle network settings (airplane, Wi-Fi, cellular) via Settings |
