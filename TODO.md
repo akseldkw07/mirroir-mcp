@@ -5,12 +5,19 @@ porting plan is in `akseldkw07/iphone-mirror-mcp`, `docs/mirroir-mcp-merge-propo
 
 ## Ports from iphone-mirror-mcp
 
-- [ ] PR 1: cover guard (open: #1)
-- [ ] PR 2: `swipe` reports whether the screen moved, retries a dropped gesture (open: #2)
-- [ ] PR 3: `scroll_to_top` (status-bar clock tap, verified by an upward probe)
-- [ ] PR 4: page images for a whole list (`read_scrolling_list`)
-- [ ] PR 5: opt-in focus restore; decide the natural-scrolling sign
-- [ ] On-device acceptance test (the list in iphone-mirror-mcp's `TODO.md`)
+- [x] Cover guard (#1), verified on device with a floating panel over the phone
+- [x] `swipe` reports whether the screen moved, retries a dropped gesture (#2), verified on device
+- [x] `scroll_to_top`: clock taps until two in a row change nothing (#6), verified on device
+- [x] `read_scrolling_list`: overlapping page images (#6, #7)
+- [ ] On-device run of `read_scrolling_list`'s overshoot recovery (#7). Settings showed a scroll
+      ratio of 1.15-2.6x per swipe; check that no rows fall between pages on a long list.
+- [ ] Opt-in focus restore (give the previous app focus back after each action)
+- [ ] Natural-scrolling sign: upstream ignores the setting; the Python original measured that
+      it flips the direction. Check on a Mac with natural scrolling off.
+- [ ] Switch the MCP client configs from `iphone-mirror-mcp` (Python) to this fork's binary,
+      then archive `akseldkw07/iphone-mirror-mcp`
+- [ ] Run the FakeMirroring integration tests (CI only: they reset the display and post input;
+      GitHub's free-tier macOS runners are slow, so they lag behind merges)
 
 ## Open iPhone Mirroring automatically
 
