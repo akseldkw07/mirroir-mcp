@@ -1,6 +1,6 @@
 # Tools Reference
 
-All 39 tools exposed by the MCP server. Mutating tools require [permission](permissions.md) to appear in `tools/list`.
+All 40 tools exposed by the MCP server. Mutating tools require [permission](permissions.md) to appear in `tools/list`.
 
 ## Tool List
 
@@ -30,6 +30,7 @@ All 39 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `spotlight` | — | Open Spotlight search |
 | `scroll_to` | `label`, `direction`?, `max_scrolls`? | Scroll until a text element becomes visible via OCR |
 | `scroll_to_top` | — | Scroll the current list back to its top by tapping the status-bar clock until two taps in a row change nothing (up to 4 taps, so a lost tap isn't taken for the top). Reports whether the top was verified |
+| `read_scrolling_list` | `max_pages`?, `from_top`? | Every screen of the current list as overlapping page images, top to bottom (from the top unless `from_top: false`). Stops at the end of the list or `max_pages`; the summary names pages that don't overlap |
 | `reset_app` | `name` | Force-quit an app via the App Switcher |
 | `measure` | `action`, `until`, `max_seconds`?, `name`? | Time a screen transition after an action |
 | `set_network` | `mode` | Toggle network settings (airplane, Wi-Fi, cellular) via Settings |

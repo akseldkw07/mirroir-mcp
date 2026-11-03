@@ -13,7 +13,7 @@
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)](https://support.apple.com/en-us/105071)
 [![Discord](https://img.shields.io/discord/1481795325953048627?logo=discord&label=Discord)](https://discord.gg/jVDBbMjPMf)
 
-**Drive a real, stock iPhone from any AI agent — no Developer Mode, no Xcode, no WebDriverAgent, no jailbreak.** mirroir-mcp works through macOS iPhone Mirroring, so it reaches any app on your phone, App Store apps you could never build included. Any MCP client, [39 tools](docs/tools.md), and experimental support for macOS app windows.
+**Drive a real, stock iPhone from any AI agent — no Developer Mode, no Xcode, no WebDriverAgent, no jailbreak.** mirroir-mcp works through macOS iPhone Mirroring, so it reaches any app on your phone, App Store apps you could never build included. Any MCP client, [40 tools](docs/tools.md), and experimental support for macOS app windows.
 
 Give your AI eyes, hands, and a real iPhone: it sees the screen, taps what it needs, and figures the rest out.
 
@@ -765,7 +765,7 @@ See [Configuration Reference](docs/configuration.md) for all 40+ settings coveri
 
 | | |
 |---|---|
-| [Tools Reference](docs/tools.md) | All 39 tools, parameters, and input workflows |
+| [Tools Reference](docs/tools.md) | All 40 tools, parameters, and input workflows |
 | [Configuration](docs/configuration.md) | All settings: screen intelligence, input timing, exploration, AI providers |
 | [FAQ](docs/faq.md) | Security, focus stealing, keyboard layouts, embacle/vision mode |
 | [Security](docs/security.md) | Threat model, kill switch, and recommendations |
