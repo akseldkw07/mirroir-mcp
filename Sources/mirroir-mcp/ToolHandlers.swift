@@ -25,6 +25,8 @@ extension MirroirMCP {
         let compilationSession = CompilationSession()
         registerSkillTools(server: server, registry: registry, session: compilationSession)
         registerScrollToTools(server: server, registry: registry)
+        registerScrollToTopTool(server: server, registry: registry)
+        registerReadScrollingListTool(server: server, registry: registry)
         registerAppManagementTools(server: server, registry: registry)
         registerMeasureTools(server: server, registry: registry)
         registerNetworkTools(server: server, registry: registry)
