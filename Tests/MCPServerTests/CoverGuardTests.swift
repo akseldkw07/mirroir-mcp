@@ -13,7 +13,10 @@ import HelperLib
 private final class StubPointOwner: PointOwnerLocating, @unchecked Sendable {
     var owners: [(point: CGPoint, owner: PointOwner)] = []
     var fallback: PointOwner?
+    var windowOwner: String?
     private(set) var asked: [CGPoint] = []
+
+    func topWindowOwnerName(at point: CGPoint, excluding pid: pid_t) -> String? { windowOwner }
 
     func owner(at point: CGPoint) -> PointOwner? {
         asked.append(point)
@@ -55,6 +58,18 @@ final class CoverGuardTests: XCTestCase {
         let error = try XCTUnwrap(input.coverRefusal(
             screenPoints: [CGPoint(x: 300, y: 600)], info: window, tag: "tap"))
         XCTAssertTrue(error.contains("could not tell"), error)
+        XCTAssertFalse(error.contains("topmost window"), error)
+    }
+
+    func testUnknownOwnerNamesTheTopmostWindowWhenThereIsOne() throws {
+        // Measured: a floating panel from a process without accessibility support
+        // makes the hit-test fail; the window list still knows whose window it is.
+        owner.fallback = nil
+        owner.windowOwner = "osascript"
+        let error = try XCTUnwrap(input.coverRefusal(
+            screenPoints: [CGPoint(x: 300, y: 600)], info: window, tag: "tap"))
+        XCTAssertTrue(error.contains("could not tell"), error)
+        XCTAssertTrue(error.contains("the topmost window there belongs to osascript"), error)
     }
 
     func testAnyCoveredPointRefuses() throws {

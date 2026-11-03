@@ -19,6 +19,13 @@ struct PointOwner: Equatable, Sendable {
 protocol PointOwnerLocating: Sendable {
     /// The owner of `point` (global screen coordinates), or nil if it can't be told.
     func owner(at point: CGPoint) -> PointOwner?
+    /// Owner name of the frontmost visible window at `point` not owned by `pid`, from the
+    /// window list. Only a hint for the refusal message when `owner(at:)` can't answer.
+    func topWindowOwnerName(at point: CGPoint, excluding pid: pid_t) -> String?
+}
+
+extension PointOwnerLocating {
+    func topWindowOwnerName(at point: CGPoint, excluding pid: pid_t) -> String? { nil }
 }
 
 /// Accessibility hit-test: the app whose element sits at the point.
@@ -37,6 +44,29 @@ struct AccessibilityPointOwnerLocator: PointOwnerLocating {
         guard AXUIElementGetPid(element, &pid) == .success else { return nil }
         let name = NSRunningApplication(processIdentifier: pid)?.localizedName
         return PointOwner(pid: pid, name: name)
+    }
+
+    /// Hit-tests can fail over windows of processes without accessibility support
+    /// (measured: a floating panel from osascript). The window list still names them.
+    /// System overlay owners are skipped: their transparent full-screen windows sit
+    /// above everything and would always be named.
+    func topWindowOwnerName(at point: CGPoint, excluding pid: pid_t) -> String? {
+        let overlays: Set<String> = ["Dock", "Notification Center", "Window Server", "WindowManager"]
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+        for window in windows {
+            guard let owner = window[kCGWindowOwnerName as String] as? String,
+                  !overlays.contains(owner),
+                  (window[kCGWindowOwnerPID as String] as? pid_t) != pid,
+                  (window[kCGWindowAlpha as String] as? Double ?? 1) > 0.01,
+                  let boundsDict = window[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsDict),
+                  bounds.contains(point)
+            else { continue }
+            return owner
+        }
+        return nil
     }
 }
 
@@ -60,6 +90,10 @@ extension InputSimulation {
                 let who = owner.name ?? "pid \(owner.pid)"
                 msg = "Another window (\(who)) covers '\(bridge.targetName)' at screen point " +
                     "\(at); nothing was sent. Uncover the window and retry."
+            } else if let top = pointOwner.topWindowOwnerName(at: point, excluding: info.pid) {
+                msg = "The cover check could not tell which app owns screen point \(at), but " +
+                    "the topmost window there belongs to \(top); nothing was sent. " +
+                    "Uncover the window and retry."
             } else {
                 msg = "The cover check could not tell which app owns screen point \(at); " +
                     "nothing was sent. Check Accessibility permission, or set " +
