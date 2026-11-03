@@ -94,6 +94,8 @@ Env-var names are derived from the camelCase key by inserting `_` before every u
 | `mirroringProcessName` | `"iPhone Mirroring"` | `MIRROIR_PROCESS_NAME` | Process name of the target window, used alongside the bundle ID for window lookup |
 | `cursorFreeInput` | `false` | `MIRROIR_CURSOR_FREE` | Post mouse events directly to the target PID via `postToPid` instead of global HID posting. Works for regular macOS apps (e.g. FakeMirroring) for local integration tests without cursor interference, but NOT for iPhone Mirroring — per-process injection does not register taps there |
 | `coverGuard` | `true` | `MIRROIR_COVER_GUARD` | Before pointing input, ask accessibility which app owns each point it touches (tap point; swipe start, midpoint and end; drag end) and refuse, sending nothing, if it isn't the target. Window captures show the target even when covered, but HID input lands on whatever is on top. Skipped in `cursorFreeInput` mode |
+| `autoLaunch` | `true` | `MIRROIR_AUTO_LAUNCH` | When a tool needs iPhone Mirroring and it isn't running or has no window, open it (`open -g -b <mirroringBundleID>`, without taking focus) and wait for its window. On its "Unlock Your iPhone" screen (found by OCR: it exposes no accessibility elements) press Connect once, then report that the phone must be unlocked. Only the iPhone Mirroring target does this |
+| `autoLaunchTimeoutUs` | `15000000` | — | How long to wait for iPhone Mirroring's window after opening it |
 
 ## AI Provider Timeouts
 

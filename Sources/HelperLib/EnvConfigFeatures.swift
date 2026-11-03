@@ -434,4 +434,15 @@ extension EnvConfig {
     public static var coverGuard: Bool {
         readBool("coverGuard", envVar: "MIRROIR_COVER_GUARD", default: true)
     }
+
+    /// Open iPhone Mirroring when a tool needs it and it isn't running or has no window
+    /// (see `InputSimulation.openMirroringIfNeeded`).
+    public static var autoLaunch: Bool {
+        readBool("autoLaunch", envVar: "MIRROIR_AUTO_LAUNCH", default: true)
+    }
+
+    /// How long to wait for iPhone Mirroring's window after opening it.
+    public static var autoLaunchTimeoutUs: UInt32 {
+        readUInt32("autoLaunchTimeoutUs", default: 15_000_000)
+    }
 }
