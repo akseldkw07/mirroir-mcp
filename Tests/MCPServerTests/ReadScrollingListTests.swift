@@ -117,6 +117,18 @@ final class ReadScrollingListTests: XCTestCase {
         XCTAssertTrue(result.reachedEnd)
     }
 
+    func testSpringBackAtTheEndReplacesTheOverscrolledPage() throws {
+        // Measured on Settings: the last swipe pulls the list past its end (offset 70),
+        // then iOS lets go and the content springs back down (offset 60). Not a gap.
+        let result = try result(try read([0, 40, 70, 60]))
+        XCTAssertEqual(result.pages.count, 3)
+        XCTAssertTrue(result.reachedEnd)
+        XCTAssertEqual(result.gaps, [])
+        let last = try XCTUnwrap(GrayFrame(png: try XCTUnwrap(result.pages.last),
+                                           size: CGSize(width: width, height: height)))
+        XCTAssertLessThan(SwipeMovement.diffRatio(last, page(60)), 0.01, "the settled page is kept")
+    }
+
     func testStopsAtMaxPagesAndChecksForMore() throws {
         let result = try result(try read([0, 40, 80, 120], maxPages: 3))
         XCTAssertEqual(result.pages.count, 3)

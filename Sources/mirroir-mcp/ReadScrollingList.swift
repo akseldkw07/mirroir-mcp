@@ -97,9 +97,16 @@ enum ReadScrollingList {
                 } else {
                     // Content moves a multiple of the finger that depends on the app:
                     // measure it, and aim the next swipe at half a screen of new rows.
-                    if let shift = contentShift(pages[pages.count - 1].gray, page.gray), shift > 0 {
+                    let last = pages[pages.count - 1].gray
+                    if let shift = contentShift(last, page.gray), shift > 0 {
                         let rows = Double(shift) * h / Double(page.gray.height)
                         step = min(h * maxStep, max(h * minStep, h * targetShare * step / rows))
+                    } else if let back = contentShift(page.gray, last), back > 0 {
+                        // The content moved down: the last swipe pulled the list past its
+                        // end and iOS let go. Keep the settled page instead; that's the end.
+                        pages[pages.count - 1] = page
+                        reachedEnd = true
+                        break
                     } else {
                         gaps.append(pages.count)
                         step = max(h * minStep, step / 2)
