@@ -138,7 +138,7 @@ final class FocusRestorerTests: XCTestCase {
         XCTAssertFalse(activity.isBusy)
     }
 
-    func testOffByDefault() {
-        XCTAssertFalse(EnvConfig.restoreFocus)
+    func testOnByDefault() {
+        XCTAssertTrue(EnvConfig.restoreFocus, "the fork gives focus back unless MIRROIR_RESTORE_FOCUS=0")
     }
 }
