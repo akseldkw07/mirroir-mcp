@@ -445,4 +445,15 @@ extension EnvConfig {
     public static var autoLaunchTimeoutUs: UInt32 {
         readUInt32("autoLaunchTimeoutUs", default: 15_000_000)
     }
+
+    /// Give focus back to the previous app once input to the mirror goes quiet
+    /// (see `FocusRestorer`). Off by default: upstream keeps the mirror frontmost.
+    public static var restoreFocus: Bool {
+        readBool("restoreFocus", envVar: "MIRROIR_RESTORE_FOCUS", default: false)
+    }
+
+    /// How long input must be quiet before focus is given back.
+    public static var restoreFocusDelayUs: UInt32 {
+        readUInt32("restoreFocusDelayUs", default: 3_000_000)
+    }
 }

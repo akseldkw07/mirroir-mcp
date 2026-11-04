@@ -313,6 +313,9 @@ final class MCPServer: Sendable {
     }
 
     private func handleToolsCall(_ request: JSONRPCRequest, modern: Bool) -> JSONRPCResponse {
+        // A focus restore (restoreFocus) waits until no tool call is running.
+        ToolCallActivity.shared.begin()
+        defer { ToolCallActivity.shared.end() }
         guard let toolName = request.params?.getToolName() else {
             return JSONRPCResponse(
                 id: request.id,

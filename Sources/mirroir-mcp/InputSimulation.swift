@@ -64,6 +64,8 @@ final class InputSimulation: Sendable {
     let pointOwner: any PointOwnerLocating
     /// Opening the app and pressing Connect when it isn't ready (`ensureConnected`).
     let recovery: MirroringRecovery
+    /// Gives focus back to the previous app after input (`restoreFocus`); nil keeps the mirror front.
+    let focusRestorer: FocusRestorer?
     /// The target's PID right now, or nil when the target is not running.
     ///
     /// Resolved on every read rather than captured at init: the target can
@@ -90,8 +92,10 @@ final class InputSimulation: Sendable {
          keyPoster: any KeyEventPosting = CGEventKeyPoster(),
          pasteboard: any PasteboardAccessing = GeneralPasteboard(),
          pointOwner: any PointOwnerLocating = AccessibilityPointOwnerLocator(),
-         recovery: MirroringRecovery = .none) {
+         recovery: MirroringRecovery = .none,
+         focusRestorer: FocusRestorer? = nil) {
         self.bridge = bridge
+        self.focusRestorer = focusRestorer
         self.pointOwner = pointOwner
         self.recovery = recovery
         // Every read behind a paste check or a Spotlight launch is one the
