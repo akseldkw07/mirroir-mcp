@@ -42,7 +42,4 @@ instead, so nobody has to do it by hand before a session:
 ## Repo setup
 
 - [x] Pre-commit hooks: upstream's `.githooks` plus `mcp-utils/precommit/fork-block.yaml` (#9, #12)
-- [ ] Before offering a port upstream: agree to `CLA.md` (opening an issue or PR upstream counts
-      as signing it; there's no separate step), and reword the commits to upstream's rules
-      (conventional, at most 2 lines, no AI attribution lines). Upstream merges locally and has
-      taken no outside PRs, so ask in an issue first.
+- Not offering these changes upstream (decided 2026-11-03): they stay in this fork.
