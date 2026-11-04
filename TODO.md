@@ -12,10 +12,12 @@ porting plan is in `akseldkw07/iphone-mirror-mcp`, `docs/mirroir-mcp-merge-propo
 - [x] On-device run of `read_scrolling_list` after #7 (2026-11-03, Settings): 4 pages to the end,
       every pair overlapping (shifts 342, 260, 208 rows), no rows lost, 15 s.
 - [x] Opt-in focus restore (`restoreFocus` / `MIRROIR_RESTORE_FOCUS`): gives focus back once input
-      goes quiet and no tool call is running; unit-tested, not yet tried on device
-- [ ] Natural-scrolling sign: upstream ignores the setting; the Python original measured that
-      it flips the direction. Check on a Mac with natural scrolling off (this Mac has it on,
-      where the fixed sign is right: every on-device swipe so far went the expected way).
+      goes quiet and no tool call is running (#14). On device (2026-11-03): Finder front, a
+      swipe brought iPhone Mirroring forward, Finder was front again 5 s later.
+- [x] Natural-scrolling sign: not needed. On device (2026-11-03) with natural scrolling off, a
+      swipe with the finger moving up scrolled Settings down (content moved up 241 px), the same
+      as with it on. Synthesized scroll events aren't flipped by the setting, so upstream's fixed
+      sign is right either way.
 - [x] Switch the MCP client configs from `iphone-mirror-mcp` (Python) to this fork's binary,
       then archive `akseldkw07/iphone-mirror-mcp` (2026-11-03; Claude Desktop verified)
 - [ ] Run the FakeMirroring integration tests (CI only: they reset the display and post input;
