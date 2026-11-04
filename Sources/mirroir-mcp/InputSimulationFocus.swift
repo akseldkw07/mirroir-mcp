@@ -37,11 +37,15 @@ extension InputSimulation {
 
         if alreadyFront {
             DebugLog.log("focus", "target already active — skipping activation")
+            focusRestorer?.noteInput()
             return false
         }
+        let previousApp = RunningAppLocator.frontmostWindowOwner()
         if DebugLog.enabled {
-            let front = RunningAppLocator.frontmostWindowOwner()?.bundleIdentifier ?? "nil"
-            DebugLog.log("focus", "switching from \(front)")
+            DebugLog.log("focus", "switching from \(previousApp?.bundleIdentifier ?? "nil")")
+        }
+        if let restorer = focusRestorer, let pid = target?.processIdentifier {
+            restorer.willActivate(target: pid, previous: previousApp?.processIdentifier)
         }
 
         // Resolve the process name for the current target's running application.

@@ -11,11 +11,13 @@ porting plan is in `akseldkw07/iphone-mirror-mcp`, `docs/mirroir-mcp-merge-propo
 - [x] `read_scrolling_list`: overlapping page images (#6, #7)
 - [x] On-device run of `read_scrolling_list` after #7 (2026-11-03, Settings): 4 pages to the end,
       every pair overlapping (shifts 342, 260, 208 rows), no rows lost, 15 s.
-- [ ] Opt-in focus restore (give the previous app focus back after each action)
+- [x] Opt-in focus restore (`restoreFocus` / `MIRROIR_RESTORE_FOCUS`): gives focus back once input
+      goes quiet and no tool call is running; unit-tested, not yet tried on device
 - [ ] Natural-scrolling sign: upstream ignores the setting; the Python original measured that
-      it flips the direction. Check on a Mac with natural scrolling off.
-- [ ] Switch the MCP client configs from `iphone-mirror-mcp` (Python) to this fork's binary,
-      then archive `akseldkw07/iphone-mirror-mcp`
+      it flips the direction. Check on a Mac with natural scrolling off (this Mac has it on,
+      where the fixed sign is right: every on-device swipe so far went the expected way).
+- [x] Switch the MCP client configs from `iphone-mirror-mcp` (Python) to this fork's binary,
+      then archive `akseldkw07/iphone-mirror-mcp` (2026-11-03; Claude Desktop verified)
 - [ ] Run the FakeMirroring integration tests (CI only: they reset the display and post input;
       GitHub's free-tier macOS runners are slow, so they lag behind merges)
 
@@ -25,34 +27,20 @@ Today every tool fails with "Target 'iphone' is not running. Launch iPhone Mirro
 when the app is closed, and `doctor` only suggests `open -a 'iPhone Mirroring'`. Open it
 instead, so nobody has to do it by hand before a session:
 
-- [ ] When `getState()` is `.notRunning` (or `.noWindow`), launch it by bundle ID
-      (`EnvConfig.mirroringBundleID`, `com.apple.ScreenContinuity`) with `NSWorkspace`,
-      without stealing focus where possible, then wait for `.connected` with a timeout.
-- [ ] Report the states it can't fix by itself, by name: the phone is unlocked or in use
-      (Mirroring pauses; the phone must be locked and nearby), not signed in, or not paired.
-- [ ] Handle the "Unlock Your iPhone" screen. Tried by hand on 2026-11-03:
-      - `open -g -b com.apple.ScreenContinuity` opened the app and its window, but the session
-        stayed paused.
-      - `status` says "Paused — connection paused, can resume", but the window shows "Unlock
-        Your iPhone … Follow the instructions on <phone> to unlock" with a **Connect** button.
-      - The session-escape plugins don't recognize this screen: a mutating tool just refuses
-        with "is paused".
-      - Accessibility exposes no elements in the window, so Connect can't be pressed by AX.
-      - A real click on Connect (hit-tested first) was accepted, but the screen didn't change:
-        the phone must be unlocked by the user (Face ID or passcode).
-      - So auto-open can press Connect (a new escape plugin keyed on the text "Unlock Your
-        iPhone", read by OCR), then wait for the unlock and report "unlock your iPhone to
-        continue" rather than retrying.
-- [ ] Do it once per tool call in `ensureConnected` (a shared preamble), and add an opt-out
-      setting (`autoLaunch` / `MIRROIR_AUTO_LAUNCH`).
+- [x] Open it by bundle ID (`open -g -b`) when it isn't running or has no window, and wait for
+      its window (#13). Verified on device: `scroll_to_top` from closed, connected, at the top.
+- [x] On the "Unlock Your iPhone" screen (no AX elements; read by OCR), press Connect once and
+      report "unlock your iPhone to continue" (#13). Unit-tested; not yet seen on device.
+- [x] Once per tool call in `ensureConnected` / `prepareTarget`, with an opt-out
+      (`autoLaunch` / `MIRROIR_AUTO_LAUNCH`) (#13).
+- [ ] Report the other states it can't fix by name: not signed in, or not paired.
 - [ ] A `mirror_launch` tool, or `status(launch: true)`, to open it on demand.
-- [ ] Tests: a launcher protocol with a stub (no real launches in unit tests), plus a
-      FakeMirroring integration test that starts from "not running".
+- [ ] A FakeMirroring integration test that starts from "not running".
 
 ## Repo setup
 
-- [ ] Pre-commit hooks: keep upstream's `.githooks`, and add `mcp-utils/precommit/fork-block.yaml`
-      once mcp-utils' `feat/shared-precommit` is merged (see its README, "Setting up a new
-      server repo").
-- [ ] Before offering a port upstream: sign `CLA.md`, and reword its commit to upstream's
-      rules (conventional, at most 2 lines, no AI attribution lines).
+- [x] Pre-commit hooks: upstream's `.githooks` plus `mcp-utils/precommit/fork-block.yaml` (#9, #12)
+- [ ] Before offering a port upstream: agree to `CLA.md` (opening an issue or PR upstream counts
+      as signing it; there's no separate step), and reword the commits to upstream's rules
+      (conventional, at most 2 lines, no AI attribution lines). Upstream merges locally and has
+      taken no outside PRs, so ask in an issue first.
