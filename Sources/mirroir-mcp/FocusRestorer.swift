@@ -1,7 +1,7 @@
 // Copyright 2026 jfarcand@apache.org
 // Licensed under the Apache License, Version 2.0
 //
-// ABOUTME: Opt-in (restoreFocus): gives focus back to the app that had it before input to the mirror.
+// ABOUTME: restoreFocus (on by default): gives focus back to the app that had it before input to the mirror.
 // ABOUTME: Waits until input goes quiet, so a run of taps or swipes switches focus only once.
 
 import AppKit

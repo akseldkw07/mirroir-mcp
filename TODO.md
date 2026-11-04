@@ -11,7 +11,7 @@ porting plan is in `akseldkw07/iphone-mirror-mcp`, `docs/mirroir-mcp-merge-propo
 - [x] `read_scrolling_list`: overlapping page images (#6, #7)
 - [x] On-device run of `read_scrolling_list` after #7 (2026-11-03, Settings): 4 pages to the end,
       every pair overlapping (shifts 342, 260, 208 rows), no rows lost, 15 s.
-- [x] Opt-in focus restore (`restoreFocus` / `MIRROIR_RESTORE_FOCUS`): gives focus back once input
+- [x] Focus restore (`restoreFocus` / `MIRROIR_RESTORE_FOCUS`, on by default since #18; `0` turns it off): gives focus back once input
       goes quiet and no tool call is running (#14). On device (2026-11-03): Finder front, a
       swipe brought iPhone Mirroring forward, Finder was front again 5 s later.
 - [x] Natural-scrolling sign: not needed. On device (2026-11-03) with natural scrolling off, a

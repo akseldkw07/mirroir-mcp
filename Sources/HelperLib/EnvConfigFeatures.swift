@@ -447,9 +447,9 @@ extension EnvConfig {
     }
 
     /// Give focus back to the previous app once input to the mirror goes quiet
-    /// (see `FocusRestorer`). Off by default: upstream keeps the mirror frontmost.
+    /// (see `FocusRestorer`). On by default in this fork; upstream keeps the mirror frontmost.
     public static var restoreFocus: Bool {
-        readBool("restoreFocus", envVar: "MIRROIR_RESTORE_FOCUS", default: false)
+        readBool("restoreFocus", envVar: "MIRROIR_RESTORE_FOCUS", default: true)
     }
 
     /// How long input must be quiet before focus is given back.
