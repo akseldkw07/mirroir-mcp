@@ -7,8 +7,8 @@
 [![npm version](https://img.shields.io/npm/v/mirroir-mcp)](https://www.npmjs.com/package/mirroir-mcp)
 [![Build](https://github.com/jfarcand/mirroir-mcp/actions/workflows/build.yml/badge.svg)](https://github.com/jfarcand/mirroir-mcp/actions/workflows/build.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)](https://support.apple.com/en-us/105071)
-[![Discord](https://img.shields.io/discord/1481795325953048627?logo=discord&label=Discord)](https://discord.gg/jVDBbMjPMf)
+[![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)](https://support.apple.com/en-us/120421)
+[![Discord](https://img.shields.io/discord/1481795325953048627?logo=discord&label=Discord)](https://discord.gg/u8ug9QCSqF)
 
 ### Let your agent use your real iPhone, then replay what it did without an LLM.
 
@@ -21,7 +21,7 @@ No Developer Mode, no Xcode, no WebDriverAgent, no jailbreak. mirroir-mcp works 
 
 ## Quick start
 
-You need macOS 15 or later and an iPhone connected through [iPhone Mirroring](https://support.apple.com/en-us/105071). Paste this into your coding agent (Claude Code, Codex, Cursor, OpenClaw, …):
+You need macOS 15 or later and an iPhone connected through [iPhone Mirroring](https://support.apple.com/en-us/120421). Paste this into your coding agent (Claude Code, Codex, Cursor, OpenClaw, …):
 
 ```text
 Set up mirroir-mcp so you can drive my iPhone: follow https://github.com/jfarcand/mirroir-mcp/blob/main/docs/onboarding.md step by step, and finish by reading back what my iPhone screen shows.
@@ -54,25 +54,32 @@ Start recording, open Instagram, scroll the feed and open my profile, stop recor
 ## Why mirroir
 
 - **Nothing to install on the phone.** The iPhone stays stock: no signing, no provisioning profile, no on-device agent. If iPhone Mirroring shows it, mirroir can drive it.
-- **Your Mac stays yours.** Taps and typing reach the mirror without bringing it to the front, so you can keep working. Swipes and drags still bring it to the front.
+- **Your Mac stays yours.** Taps, typing and swipes reach the mirror without bringing it to the front, so you can keep working. Drags and two-finger gestures bring it forward for a moment, then hand your app back.
 - **Explore once, replay without an LLM.** `generate_skill` explores an app and writes [SKILL.md](docs/skills-and-ci.md#skills) files. A compiled skill replays from the CLI with no AI in the loop (`mirroir test`), so CI runs are deterministic and cost no tokens.
-- **Drift fails loudly.** [`mirroir-run`](docs/mirroir-run.md) has a third verdict beside pass and fail: `DRIFT`, exit code **65**, when every assertion held but the output moved past its baseline. Your CI lane decides whether drift blocks a merge.
+- **One test across phone, web and backend.** [`mirroir-run`](docs/mirroir-run.md) is our companion test runner, a separate binary. One YAML scenario can drive the iPhone, a browser, HTTP endpoints and subprocesses, then compare what the page and the phone showed. See [Web and iOS in one scenario](docs/web-and-ios.md).
+- **Drift fails loudly.** `mirroir-run` has a third verdict beside pass and fail: `DRIFT`, exit code **65**, when every assertion held but the output moved past its baseline. Your CI lane decides whether drift blocks a merge.
 - **It plays games, too.** A `scene:` step plays a turn-based or tap-driven game, frame by frame, under a hard budget. See [Games](docs/games.md).
-- **One scenario, many surfaces.** A single `mirroir-run` scenario can drive the iPhone, a browser, HTTP endpoints and subprocesses, then compare what the page and the phone showed. See [Web and iOS in one scenario](docs/web-and-ios.md).
+
+  <p align="center">
+    <img src="website/public/chess-vs-maximum.gif" alt="The console and a real iPhone side by side during a full chess game: each move is logged as it is played, ending in checkmate against the Maximum bot on Chess.com" width="720" />
+  </p>
+  <p align="center"><em>A real game on a real iPhone: the model reads the board, Stockfish picks the moves, mirroir plays them against Chess.com's strongest bot. The opening runs at 2.5×, the middle game at 45×, the finish at 2×.</em></p>
 
 ### How it compares
 
-| | mirroir | [Maestro](https://github.com/mobile-dev-inc/Maestro) | [mobile-mcp](https://github.com/mobile-next/mobile-mcp) | [Appium](https://github.com/appium/appium) |
+| | mirroir | [phone-harness](https://github.com/phone-harness/phone-harness) | [mobile-mcp](https://github.com/mobile-next/mobile-mcp) | [Appium](https://github.com/appium/appium) |
 |---|---|---|---|---|
-| Physical iPhone, no Developer Mode or signing | Yes — stock phone via iPhone Mirroring | No — its README: *"Physical iOS devices are not yet supported."* | USB-connected, trusted device (see its README) | No — WebDriverAgent via Xcode, Developer Mode |
-| App Store apps you can't build | Yes | No — iOS runs on simulator builds | Yes | Yes, on a provisioned device |
-| Replay without an LLM | Yes — compiled skills, `mirroir test` | Yes — YAML flows | No — the agent drives every run | Yes — test code |
-| Distinct drift verdict | Yes — `DRIFT`, exit 65 | No — pass / fail | No | No — pass / fail |
-| One scenario across iPhone + web + HTTP | Yes — `mirroir-run` | Web in the same flow syntax | No | Via your own test code |
+| Physical iPhone, no Developer Mode or signing | Yes — stock phone via iPhone Mirroring | Yes — stock phone via iPhone Mirroring | USB-connected, trusted device (see its README) | No — WebDriverAgent via Xcode, Developer Mode |
+| App Store apps you can't build | Yes | Yes | Yes | Yes, on a provisioned device |
+| Your own iPhone from any MCP client | Yes | No — its MCP server is cloud-only; local phones use its CLI | Yes | Through the separate [appium-mcp](https://github.com/appium/appium-mcp) |
+| Replay without an LLM | Yes — compiled skills, `mirroir test` | Python scripts you write; no recorder or compiled replay | No — the agent drives every run | Yes — test code |
+| Distinct drift verdict | Yes — `DRIFT`, exit 65 | No | No | No — pass / fail |
+| One scenario across iPhone + web + HTTP | Yes — `mirroir-run` | No | No | Via your own test code |
 | Android | No — an emulator window can be driven only as a generic macOS window | Yes | Yes | Yes |
-| iOS Simulator | No | Yes | Yes | Yes |
+| iOS Simulator | No | No | Yes | Yes |
+| Hosted cloud phones | No | Yes — Phone Harness Cloud | Yes — Mobile Next Cloud | Via third-party device clouds |
 
-Each tool has strengths the table doesn't capture. Maestro, mobile-mcp and Appium cover Android and simulators, which mirroir doesn't. mirroir is built for the case they leave open: a real, unmodified iPhone running apps you don't build.
+phone-harness is the closest tool here: it also drives a stock iPhone through iPhone Mirroring, and it adds Android and hosted phones, which mirroir doesn't have. mobile-mcp and Appium cover Android and simulators too. mirroir goes further after the agent's first run: that run becomes a replay that needs no LLM, and a test that tells you when the output moves.
 
 ## Safety
 
@@ -116,7 +123,7 @@ See [Security](docs/security.md) for the full threat model.
 
 ## Community
 
-Join the [Discord server](https://discord.gg/jVDBbMjPMf) to ask questions, share skills, and discuss ideas. Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). By submitting a patch, you agree to the [Contributor License Agreement](CLA.md); your Git commit metadata serves as your electronic signature.
+Join the [Discord server](https://discord.gg/u8ug9QCSqF) to ask questions, share skills, and discuss ideas. Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). By submitting a patch, you agree to the [Contributor License Agreement](CLA.md); your Git commit metadata serves as your electronic signature.
 
 ---
 
