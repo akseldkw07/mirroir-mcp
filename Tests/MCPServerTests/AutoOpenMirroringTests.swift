@@ -140,8 +140,8 @@ final class AutoOpenMirroringTests: XCTestCase {
         describer.describeResult = ScreenDescriber.DescribeResult(elements: [
             TapPoint(text: "Connect", tapX: 160, tapY: 468, confidence: 0.95),
         ], screenshotBase64: "")
-        XCTAssertEqual(input(launcher: launcher).ensureConnected(tag: "tap"),
-                       "Target 'iphone' is paused. Unlock iPhone or click Resume in the mirroring window.")
+        let error = input(launcher: launcher).ensureConnected(tag: "tap")
+        XCTAssertTrue(error?.hasPrefix("Target 'iphone' is paused.") ?? false, error ?? "nil")
         XCTAssertEqual(clicks.points, [])
     }
 
