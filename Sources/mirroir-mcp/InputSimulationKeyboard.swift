@@ -15,150 +15,19 @@ extension InputSimulation {
     /// Trigger a shake gesture on the mirrored iPhone.
     /// Sends Ctrl+Cmd+Z via CGEvent which triggers shake-to-undo in iOS apps.
     func shake() -> TypeResult {
-        if let keyboardError = prepareKeyboardInput(tag: "shake") {
+        let prep = prepareWindowKeyboardInput(tag: "shake")
+        if let keyboardError = prep.error {
             return TypeResult(success: false, error: keyboardError)
         }
 
         DebugLog.log("shake", "sending shake gesture via CGEvent")
-        ensureTargetFrontmost()
 
-        let result = CGEventInput.shake()
+        let result = CGEventInput.shake(targetPID: prep.targetPID)
         DebugLog.log("shake", "CGEvent=\(result ? "OK" : "FAILED")")
         if result {
             return TypeResult(success: true, error: nil)
         }
         return TypeResult(success: false, error: "CGEvent shake failed")
-    }
-
-    /// Launch an app by name using Spotlight search.
-    /// Opens Spotlight, types the app name, waits for results, and presses Return.
-    /// Returns nil on success, or an error message on failure.
-    func launchApp(name: String) -> String? {
-        if let stateError = ensureConnected(tag: "launchApp") {
-            return stateError
-        }
-        DebugLog.log("launchApp", "launching '\(name)'")
-
-        // Step 1: Open Spotlight via menu action (requires MenuActionCapable). The
-        // screen before it is kept to tell when Spotlight has opened.
-        let beforeOpen = pasteVerifier?.describe(settleTimeoutUs: 0)?.elements ?? []
-        guard let menuBridge = bridge as? (any MenuActionCapable),
-              menuBridge.triggerMenuAction(menu: "View", item: "Spotlight") else {
-            DebugLog.log("launchApp", "ERROR: failed to open Spotlight")
-            return "Failed to open Spotlight. Is target '\(bridge.targetName)' running?"
-        }
-        usleep(EnvConfig.spotlightAppearanceUs)
-
-        // Step 2: Type the app name, and confirm Spotlight shows it before Return.
-        // Spotlight can reopen holding the previous query in a state that swallows
-        // keystrokes; Return would then launch the previous result.
-        // Spotlight opened while a Home transition finishes is closed again by it,
-        // so a Spotlight that never shows is opened once more before giving up.
-        guard let opened = spotlightScreen(replacing: beforeOpen)
-                ?? (menuBridge.triggerMenuAction(menu: "View", item: "Spotlight")
-                    ? spotlightScreen(replacing: beforeOpen) : nil) else {
-            return "Spotlight did not open (or the screen could not be read), so " +
-                "'\(name)' was not searched for; Return was not pressed."
-        }
-        // An app tile already showing the app (the held query's top hit, or a Siri
-        // suggestion) is tapped instead: typing into a held query is ignored.
-        if let tile = SpotlightAppTile.label(for: name, in: opened.elements) {
-            return openTile(tile, name: name, spotlight: opened.elements)
-        }
-        let before = opened.elements.map(\.text)
-        let typeResult = typeText(name)
-        guard typeResult.success else {
-            DebugLog.log("launchApp", "ERROR: failed to type app name")
-            return typeResult.error ?? "Failed to type app name"
-        }
-        usleep(EnvConfig.searchResultsPopulateUs)
-        guard spotlightShows(name, comparedTo: before) else {
-            // Spotlight can open on its idle page, then restore the held query that
-            // swallowed the typing: its tile for this app still opens it.
-            if let screen = pasteVerifier?.describe(settleTimeoutUs: 0),
-               let tile = SpotlightAppTile.label(for: name, in: screen.elements) {
-                return openTile(tile, name: name, spotlight: screen.elements)
-            }
-            DebugLog.log("launchApp", "ERROR: '\(name)' never appeared in Spotlight")
-            return "Typed '\(name)' into Spotlight but it never appeared on screen, so " +
-                "Return was not pressed. Spotlight may be holding a previous query, or " +
-                "keystrokes are not reaching the iPhone."
-        }
-
-        // Step 3: Press Return to launch the top result
-        let keyResult = pressKey(keyName: "return")
-        guard keyResult.success else {
-            DebugLog.log("launchApp", "ERROR: failed to press Return")
-            return keyResult.error ?? "Failed to press Return"
-        }
-
-        DebugLog.log("launchApp", "launched '\(name)' OK")
-        return nil
-    }
-
-    /// Every text line on screen, read once through `pasteVerifier`. Nil when
-    /// there is no reader or the screen cannot be read.
-    private func screenLines() -> [String]? {
-        guard let result = pasteVerifier?.describe(settleTimeoutUs: 0),
-              result.ocrFailure == nil else { return nil }
-        return result.elements.map(\.text)
-    }
-
-    /// The screen once Spotlight shows on it, polling for up to
-    /// `pasteVerifyTimeoutUs`; nil when it never does or cannot be read. Spotlight
-    /// shows when its known headings appear or the screen no longer matches
-    /// `previous` (the headings are localized, and only some locales are known).
-    private func spotlightScreen(replacing previous: [TapPoint]) -> ScreenDescriber.DescribeResult? {
-        let poll = max(1, EnvConfig.pasteVerifyPollUs)
-        let attempts = max(1, Int(EnvConfig.pasteVerifyTimeoutUs / poll))
-        for attempt in 0 ..< attempts {
-            if attempt > 0 { usleep(poll) }
-            if let screen = pasteVerifier?.describe(settleTimeoutUs: 0),
-               screen.ocrFailure == nil,
-               SpotlightDetector.isSpotlightVisible(elements: screen.elements)
-                || !StructuralFingerprint.areEquivalent(previous, screen.elements) {
-                return screen
-            }
-        }
-        return nil
-    }
-
-    /// Tap the Spotlight tile showing `name`, then confirm Spotlight closed: its
-    /// known headings are gone and the screen no longer matches `spotlight`,
-    /// polling for up to `pasteVerifyTimeoutUs`. Nil on success, else why it failed.
-    private func openTile(_ tile: TapPoint, name: String, spotlight: [TapPoint]) -> String? {
-        DebugLog.log("launchApp", "tapping the '\(name)' tile Spotlight already shows")
-        if let tapError = tap(x: tile.tapX, y: tile.tapY) {
-            return "Failed to tap the '\(name)' tile in Spotlight: \(tapError)"
-        }
-        let poll = max(1, EnvConfig.pasteVerifyPollUs)
-        let attempts = max(1, Int(EnvConfig.pasteVerifyTimeoutUs / poll))
-        for attempt in 0 ..< attempts {
-            if attempt > 0 { usleep(poll) }
-            if let screen = pasteVerifier?.describe(settleTimeoutUs: 0),
-               screen.ocrFailure == nil,
-               !SpotlightDetector.isSpotlightVisible(elements: screen.elements),
-               !StructuralFingerprint.areEquivalent(spotlight, screen.elements) {
-                return nil
-            }
-        }
-        return "Tapped the '\(name)' tile in Spotlight but Spotlight is still open, so " +
-            "'\(name)' did not launch."
-    }
-
-    /// Whether `name` shows up on screen more often than in `before`, polling
-    /// for up to `pasteVerifyTimeoutUs`.
-    private func spotlightShows(_ name: String, comparedTo before: [String]) -> Bool {
-        let poll = max(1, EnvConfig.pasteVerifyPollUs)
-        let attempts = max(1, Int(EnvConfig.pasteVerifyTimeoutUs / poll))
-        for attempt in 0 ..< attempts {
-            if attempt > 0 { usleep(poll) }
-            if let lines = screenLines(),
-               PasteNeedle.appearedAgain(name, before: before, after: lines) {
-                return true
-            }
-        }
-        return false
     }
 
     /// Open a URL on the mirrored iPhone by launching Safari and navigating to it.
@@ -210,19 +79,19 @@ extension InputSimulation {
     /// re-pastes the stale value. A paste that is not seen — or cannot be read
     /// back, like emoji — fails the call instead of passing silently.
     func typeText(_ text: String) -> TypeResult {
-        if let keyboardError = prepareKeyboardInput(tag: "typeText") {
+        let prep = prepareWindowKeyboardInput(tag: "typeText")
+        if let keyboardError = prep.error {
             return TypeResult(success: false, error: keyboardError)
         }
 
         DebugLog.log("typeText", "typing \(text.count) char(s)")
-        ensureTargetFrontmost()
 
         let segments = buildTypeSegments(text)
         let saved = pasteboard.string()
         let pastes = segments.contains { $0.method == .paste }
 
         let entry = VerifiedTextEntry(
-            typeKeys: { [self] run in typeViaCGEvent(run) },
+            typeKeys: { [self] run in typeViaCGEvent(run, targetPID: prep.targetPID) },
             paste: { [self] run in pasteRun(run) },
             readScreen: { [self] in screenLines() },
             sleep: { usleep($0) },
@@ -304,7 +173,7 @@ extension InputSimulation {
     }
 
     /// Type text by posting CGEvent keyboard events for each character.
-    private func typeViaCGEvent(_ text: String) -> TypeResult? {
+    private func typeViaCGEvent(_ text: String, targetPID: pid_t?) -> TypeResult? {
         for char in text {
             guard let sequence = keyboardLayout.keySequence(for: char) else {
                 return TypeResult(
@@ -312,7 +181,7 @@ extension InputSimulation {
                     error: "No key mapping for character '\(char)'"
                 )
             }
-            guard keyPoster.postKeySequence(sequence) else {
+            guard keyPoster.postKeySequence(sequence, targetPID: targetPID) else {
                 return TypeResult(
                     success: false,
                     error: "CGEvent key post failed for '\(char)'"
@@ -327,13 +196,13 @@ extension InputSimulation {
     /// via CGEvent keyboard events. Also handles single printable characters with modifiers
     /// (e.g., Cmd+L for Safari address bar).
     func pressKey(keyName: String, modifiers: [String] = []) -> TypeResult {
-        if let keyboardError = prepareKeyboardInput(tag: "pressKey") {
+        let prep = prepareWindowKeyboardInput(tag: "pressKey")
+        if let keyboardError = prep.error {
             return TypeResult(success: false, error: keyboardError)
         }
 
         let modStr = modifiers.isEmpty ? "" : " modifiers=\(modifiers.joined(separator: "+"))"
         DebugLog.log("pressKey", "key=\(keyName)\(modStr)")
-        ensureTargetFrontmost()
 
         // Resolve the virtual keycode: try special key names first, then single characters
         let keycode: UInt16
@@ -359,7 +228,7 @@ extension InputSimulation {
             flags.insert(flag)
         }
 
-        let result = keyPoster.postKey(keycode: keycode, flags: flags)
+        let result = keyPoster.postKey(keycode: keycode, flags: flags, targetPID: prep.targetPID)
         DebugLog.log("pressKey", "CGEvent=\(result ? "OK" : "FAILED")")
         if result {
             return TypeResult(success: true, error: nil)

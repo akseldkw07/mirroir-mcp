@@ -1,7 +1,7 @@
 // Copyright 2026 jfarcand@apache.org
 // Licensed under the Apache License, Version 2.0
 //
-// ABOUTME: Opens iPhone Mirroring when it isn't running, and presses Connect on its unlock screen.
+// ABOUTME: Opens iPhone Mirroring when it isn't running, frees a paused session, and presses Connect on its unlock screen.
 // ABOUTME: The phone must still be unlocked by its owner; that case gets a clear "unlock" message.
 
 import AppKit
@@ -106,6 +106,38 @@ extension InputSimulation {
         if bridge.getState() == .connected { return nil }
         return "iPhone Mirroring shows \"Unlock Your iPhone\"; I pressed Connect. Unlock your iPhone "
             + "(Face ID or passcode) to continue, then retry."
+    }
+
+    /// Free a session suspended by a target interruption (on iPhone Mirroring: the
+    /// "iPhone camera is not available from Mac" OK dialog, or the plain "click to
+    /// resume" overlay) by running the registered `SessionEscapePlugin`s. The
+    /// framework is target-agnostic; the bundled plugins handle iPhone Continuity
+    /// dialogs via a real mouse click that frees the session even when CGEvent
+    /// input to the device is rejected. Interruptions can re-arm, so it retries.
+    /// Returns true if the session is connected (or was never paused).
+    func freePausedSession(tag: String) -> Bool {
+        guard bridge.getState() == .paused else { return true }
+        let click = escapeClick()
+        for attempt in 0 ..< EnvConfig.pausedDismissClickAttempts {
+            DebugLog.log(tag, "session paused — running escape plugins " +
+                "(attempt \(attempt + 1)/\(EnvConfig.pausedDismissClickAttempts))")
+            // Try registered escape plugins in order (camera dialog → resume overlay).
+            guard SessionEscapeRegistry.attemptEscape(
+                bridge: bridge, click: click, tag: tag) else {
+                // No plugin recognized this interruption — nothing more to try.
+                // A previous attempt's click can still be taking effect (the
+                // overlay fades after the session resumes), so give it the
+                // resume settle time before reporting the session as paused.
+                if attempt > 0 { usleep(EnvConfig.resumeFromPausedUs) }
+                return bridge.getState() == .connected
+            }
+            usleep(EnvConfig.resumeFromPausedUs)
+            if bridge.getState() == .connected {
+                DebugLog.log(tag, "session freed — now connected")
+                return true
+            }
+        }
+        return bridge.getState() == .connected
     }
 
     /// The Connect button below an "Unlock Your iPhone" heading, if the OCR shows both.

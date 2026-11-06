@@ -1,16 +1,16 @@
 # Tools Reference
 
-All 40 tools exposed by the MCP server. Mutating tools require [permission](permissions.md) to appear in `tools/list`.
+All 41 tools exposed by the MCP server. Mutating tools require [permission](permissions.md) to appear in `tools/list`.
 
 ## Tool List
 
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `screenshot` | — | Capture the iPhone screen as base64 PNG |
-| `describe_screen` | `scroll`?, `omit_screenshot`?, `settle_ms`? | Analyze the screen and return UI elements with tap coordinates plus a grid-overlaid screenshot. Uses local OCR or AI vision depending on `screenDescriberMode`. `scroll: true` does a full-page scroll to capture all elements. `omit_screenshot: true` returns text only (no image). `settle_ms` sets how long to wait for the screen to stop changing first. |
+| `describe_screen` | `scroll`?, `omit_screenshot`?, `query`?, `text_only`?, `settle_ms`? | Analyze the screen and return UI elements with tap coordinates plus a grid-overlaid screenshot. Uses local OCR or AI vision depending on `screenDescriberMode`. `scroll: true` does a full-page scroll to capture all elements. `omit_screenshot: true` returns text only (no image). `query` lists only elements whose text contains it (case- and accent-insensitive; icons omitted), and `text_only: true` drops the coordinates, so reading one value costs a line or two. `settle_ms` sets how long to wait for the screen to stop changing first. |
 | `start_recording` | `output_path`? | Start video recording of the mirrored screen |
 | `stop_recording` | — | Stop recording and return the .mov file path |
-| `tap` | `x`, `y`, `cursor_mode`? | Tap at coordinates (relative to mirroring window) |
+| `tap` | `text`? or `x`, `y`; `cursor_mode`? | Tap visible text found by OCR (`text`; a miss lists the text on screen), or tap at coordinates relative to the mirroring window |
 | `double_tap` | `x`, `y`, `cursor_mode`? | Two rapid taps for zoom/text selection |
 | `long_press` | `x`, `y`, `duration_ms`?, `cursor_mode`? | Hold tap for context menus (default 500ms) |
 | `swipe` | `from_x`, `from_y`, `to_x`, `to_y`, `duration_ms`?, `cursor_mode`? | Swipe between two points (default 300ms). Compares captures before and after and says whether the screen moved (`diff_ratio`, status bar ignored, a few-pixel overscroll release doesn't count); a swipe that moved nothing is retried once |
@@ -22,7 +22,7 @@ All 40 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `type_text` | `text` | Type text — activates iPhone Mirroring and sends keystrokes. Characters with no key are pasted one run at a time and each paste is confirmed by OCR; one not seen (or unreadable, like emoji) returns an error ([limitations](limitations.md#clipboard-paste-is-confirmed-by-ocr)) |
 | `press_key` | `key`, `modifiers`? | Send a special key (return, escape, tab, delete, space, arrows) with optional modifiers (command, shift, option, control) |
 | `shake` | — | Trigger shake gesture (Ctrl+Cmd+Z) for undo/dev menus |
-| `launch_app` | `name` | Open app by name via Spotlight search; fails without pressing Return when the typed name never appears on screen |
+| `launch_app` | `name` | Open app by name via Spotlight search; presses Return only when the top result is an app, so a missing app fails instead of opening a web or App Store result; fails without pressing Return when the typed name never appears on screen |
 | `open_url` | `url` | Open URL in Safari |
 | `press_home` | — | Go to home screen |
 | `press_app_switcher` | — | Open app switcher |
@@ -33,6 +33,7 @@ All 40 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `read_scrolling_list` | `max_pages`?, `from_top`? | Every screen of the current list as overlapping page images, top to bottom (from the top unless `from_top: false`). Stops at the end of the list or `max_pages`; the summary names pages that don't overlap |
 | `reset_app` | `name` | Force-quit an app via the App Switcher |
 | `measure` | `action`, `until`, `max_seconds`?, `name`? | Time a screen transition after an action |
+| `run_steps` | `steps` | Run several proven steps in one call, in the [step grammar](#step-types) (`"tap: <text on screen>"`, `"tap: @324,113"` for a point, `"type: calculator"`, `"wait_for: Get"`, `"home"`). Every step is checked against the permission policy before the first runs; the run stops at the first failure and the reply ends with the text on screen |
 | `set_network` | `mode` | Toggle network settings (airplane, Wi-Fi, cellular) via Settings |
 | `get_orientation` | — | Report portrait/landscape and window dimensions |
 | `status` | — | Connection state, window geometry, and device readiness |
@@ -42,6 +43,7 @@ All 40 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `generate_skill` | `action`, `app_name`?, `goal`?, `goals`?, `arrived_via`?, `action_type`?, `max_depth`?, `max_screens`?, `max_time`?, `strategy`?, `fresh`?, `seed`?, `skip_calibration`?, `explorer`?, `emit`?, `output_dir`? | Generate a SKILL.md by exploring an app. Session-based: start → capture → finish. `action: "explore"` runs autonomous exploration — `explorer: "bfs"` (default) or `"dfs"`. `fresh: false` resumes a persisted navigation graph; `seed` makes exploration ordering deterministic. `emit: true` (on `finish` / `explore`) also writes a runnable iOS leg into the consumer repo's `.mirroir/apps/<app>/` — see [Web and iOS in one scenario](web-and-ios.md); `output_dir` names the repo root when the server is not running from it. `save_compiled` and `mirroir record` write the same tree. |
 | `list_targets` | — | List all configured automation targets with status and window size |
 | `switch_target` | `target` | Switch active target for subsequent tool calls |
+| `classify_screen` | `target`? | Group the current screen's OCR elements into UI components with an AI model: each component, its definition, and the elements it covers. Read-only |
 | `calibrate_component` | `component_path`, `target`?, `scroll`? | Test a component definition (.md) against the current screen and return a diagnostic report |
 | `record_step` | `step_index`, `type`, `label`?, `tap_x`?, `tap_y`?, `match_strategy`?, `elapsed_ms`?, `scroll_count`?, `scroll_direction`? | Record a compiled step during AI-driven skill execution; a tap with coordinates and no label also records the screen it led to, which replay must reach, and is refused when that screen is the one before the tap |
 | `save_compiled` | `skill_name`, `emit`?, `output_dir`? | Save accumulated compiled steps as .compiled.json next to the source skill (the speed cache `mirroir test` replays). `emit: true` also writes the walk into the consumer repo's `.mirroir/apps/<app>/` as a runnable iOS scenario — its app is the one the skill's opening `launch:` names; no `.compiled.json` is written into `.mirroir/`. See [Compiled Skills](compiled-skills.md#emitting-the-walk-into-mirroir). |
@@ -54,8 +56,8 @@ Coordinates are in points relative to the mirroring window's top-left corner. Us
 
 `describe_screen` returns detected elements with their tap coordinates, plus a grid-overlaid screenshot for visual context. The backend depends on `screenDescriberMode`:
 
-- **Local OCR (default)** — Apple Vision OCR for text recognition. If a YOLO CoreML model is installed in `~/.mirroir-mcp/models/`, the server auto-detects it and merges icon detections — giving the AI tap targets for non-text elements (buttons, toggles, icons) that text-only OCR misses. See [Icon Detection](../README.md#icon-detection-yolo-coreml) for setup.
-- **AI Vision** — When `screenDescriberMode` is `"vision"` (or `"auto"` with the embacle FFI linked), the screenshot is sent to an AI vision model that identifies UI elements semantically — cards, tabs, buttons, navigation structure — instead of raw text fragments. See [AI Vision Mode](../README.md#ai-vision-mode-embacle) for setup.
+- **Local OCR (default)** — Apple Vision OCR for text recognition. If a YOLO CoreML model is installed in `~/.mirroir-mcp/models/`, the server auto-detects it and merges icon detections — giving the AI tap targets for non-text elements (buttons, toggles, icons) that text-only OCR misses. See [Icon Detection](screen-intelligence.md#icon-detection-yolo-coreml) for setup.
+- **AI Vision** — When `screenDescriberMode` is `"vision"` (or `"auto"` with the embacle FFI linked), the screenshot is sent to an AI vision model that identifies UI elements semantically — cards, tabs, buttons, navigation structure — instead of raw text fragments. See [AI Vision Mode](screen-intelligence.md#ai-vision-mode-embacle) for setup.
 
 Set `scroll: true` to perform a full-page scroll before returning results. The server scrolls through the entire page, deduplicates elements across viewports, and returns all detected elements — not just those visible in the initial viewport.
 
@@ -67,16 +69,16 @@ A frame that is a uniform fill (rotation, launch, scene change) with no text or 
 
 ## Typing Workflow
 
-`type_text` and `press_key` route keyboard input through the CGEvent keyboard interface. If iPhone Mirroring isn't already frontmost, the MCP server activates it once (which may trigger a macOS Space switch) and stays there. Subsequent keyboard tool calls reuse the active window without switching again.
+`type_text` and `press_key` send CGEvent key events addressed to the iPhone Mirroring process, after one window event makes the mirror the key window of its own app. iPhone Mirroring is not activated: the app you are using keeps focus (see [limitations](limitations.md#focus-stealing)).
 
 - Characters are mapped to macOS virtual keycodes with automatic keyboard layout translation — non-US layouts (French AZERTY, German QWERTZ, etc.) are supported via UCKeyTranslate
-- iOS autocorrect applies — type carefully or disable it on the iPhone
+- iOS autocorrect applies, and it rewrites words as they are typed (in Notes, "Thu teh adress" lands as "They the adress"; a French keyboard turns English words into French ones). After typing, `type_text` reads the text back from the screen; when the screen does not show what was typed, the call still succeeds and its result carries a notice saying so. A password field hides its text, so the notice is expected there.
 
 ## Key Press Workflow
 
 `press_key` sends special keys that `type_text` can't handle — Return to submit forms, Tab to switch fields, Delete to erase, and arrow keys to move through lists or text.
 
-**Important:** Keyboard shortcuts with modifiers (Cmd+N, Cmd+Z, etc.) do **not** work with iOS apps through iPhone Mirroring. iOS apps do not receive modifier-key combinations through the mirroring compositor. The only modifier combination that works is `shake` (Ctrl+Cmd+Z), which is a Mac-level action that iPhone Mirroring translates to a device shake.
+**Important:** Modifier shortcuts reach iOS, but only the ones iOS itself implements do anything. In a focused text field Cmd+A, Cmd+C and Cmd+V work (a select-all, copy, delete, paste round trip restores the text), and Safari implements Cmd+L. Mac conventions such as Cmd+[ for back are not implemented by iOS apps and do nothing. `shake` (Ctrl+Cmd+Z) is translated by iPhone Mirroring into a device shake.
 
 For navigating within apps, combine `spotlight` + `type_text` + `press_key`. For example: `spotlight` → `type_text "Messages"` → `press_key return` to launch Messages.
 
@@ -266,7 +268,7 @@ Steps are intents — the AI maps each to the appropriate MCP tool calls:
 | `reset_app: "AppName"` | calls `reset_app` — force-quit via App Switcher |
 | `set_network: "mode"` | calls `set_network` — toggle airplane/wifi/cellular |
 | `measure: { action, until, max }` | calls `measure` — time screen transitions |
-| `scene: { skill, max_frames, max_tokens, max_seconds }` | plays a `kind: game` skill under a hard budget — see [Scenes](skills-marketplace.md#scenes) |
+| `scene: { skill, max_frames, max_tokens, max_seconds, decider }` | plays a `kind: game` skill under a hard budget; `decider` names the move picker a `decider: required` skill needs — see [Scenes](skills-marketplace.md#scenes) |
 | `target: { kind: ios }` / `target: { kind: macos, name: "…" }` | calls `switch_target` — switch to the iPhone or to a configured desktop window |
 | `remember: "instruction"` | AI reads dynamic data from screen and holds it for later steps |
 | `condition:` | Branch based on screen state — see below |
