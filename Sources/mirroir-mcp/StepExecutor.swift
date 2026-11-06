@@ -190,8 +190,8 @@ final class StepExecutor {
                                      skillName: skillName, startTime: startTime)
         case .switchTarget(let selector):
             result = executeSwitchTarget(selector: selector, startTime: startTime)
-        case .scene(let skill, let budget):
-            result = executeScene(skill: skill, budget: budget, stepIndex: stepIndex,
+        case .scene(let skill, let budget, let decider):
+            result = executeScene(skill: skill, budget: budget, decider: decider, stepIndex: stepIndex,
                                   skillName: skillName, startTime: startTime)
         case .skipped(let stepType, let reason):
             let duration = CFAbsoluteTimeGetCurrent() - startTime
@@ -241,6 +241,13 @@ final class StepExecutor {
                               durationSeconds: elapsed(startTime))
         }
 
+        if let point = TapStepPoint.parse(label) {
+            let error = input.tap(x: point.x, y: point.y)
+            return StepResult(step: step, status: error == nil ? .passed : .failed,
+                              message: error ?? "tapped by coordinates",
+                              durationSeconds: elapsed(startTime))
+        }
+
         guard let describeResult = describer.describe() else {
             return StepResult(step: step, status: .failed,
                               message: "Failed to capture screen for OCR",
@@ -272,7 +279,7 @@ final class StepExecutor {
                               message: result.error ?? "Type failed",
                               durationSeconds: elapsed(startTime))
         }
-        return StepResult(step: step, status: .passed, message: nil,
+        return StepResult(step: step, status: .passed, message: result.notice,
                           durationSeconds: elapsed(startTime))
     }
 

@@ -51,9 +51,11 @@ on:
 
 # Cancel superseded runs to save the scarce macOS runner slots. Keyed on
 # `head_ref || ref` so a branch push and the pull request for it share one group.
+# Never on main or a tag: each of those commits keeps its own complete run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  # On main every commit keeps its own run: a third push must not replace a queued second one.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
@@ -111,56 +113,11 @@ jobs:
           echo "=== AX/Input Monitoring TCC (read-only check) ==="
           ls -l /Library/Application\ Support/com.apple.TCC/TCC.db 2>/dev/null || echo "no system TCC.db readable"
 
-      - name: Integration tests (FakeMirroring)
-        env:
-          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
-        run: swift test --filter IntegrationTests
-
-      - name: Post-test runner diagnostics (on failure)
-        if: failure()
-        run: |
-          echo "=== ps for FakeMirroring after tests ==="
-          ps -ef | grep -i FakeMirroring | grep -v grep || echo "FakeMirroring not running"
-          echo ""
-          echo "=== CGWindowList via osascript ==="
-          osascript -e 'tell application "System Events" to get every process whose visible is true' 2>&1 | head -10 || true
-          echo ""
-          echo "=== FakeMirroring NSLog output (last 10 min, full) ==="
-          log show --last 10m --predicate 'process == "FakeMirroring"' --info --debug 2>&1 | grep -E "fakemirror-tap|FakeMirroring\]" | tail -200 || true
-          echo ""
-          echo "=== WindowServer log (last 5 min) ==="
-          log show --last 5m --predicate 'subsystem == "com.apple.WindowServer"' --info 2>&1 | tail -100 || true
-          echo ""
-          echo "=== HIToolbox / event tap log (last 5 min) ==="
-          log show --last 5m --predicate 'subsystem == "com.apple.HIToolbox" OR subsystem == "com.apple.coreservices"' --info 2>&1 | tail -50 || true
-
-      - name: Test runner (FakeMirroring)
-        env:
-          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
-        run: |
-          set -euo pipefail
-          .build/release/mirroir-mcp test --junit test-results.xml --verbose Tests/Fixtures/skills/fake-mirroring-check.yaml 2>&1 | tee test-runner.log
-          # Every capture must come from ScreenCaptureKit: a fallback to the
-          # screencapture CLI is a degraded capture path, even when steps pass.
-          grep -qE "capture: sck=[1-9][0-9]* fallback=0$" test-runner.log \
-            || { echo "capture fell back to the screencapture CLI:"; grep "capture:" test-runner.log; exit 1; }
-
-      - name: Compile skill (FakeMirroring)
-        env:
-          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
-        run: |
-          .build/release/mirroir-mcp compile Tests/Fixtures/skills/fake-mirroring-compiled.yaml
-
-      - name: Test compiled skill (FakeMirroring)
-        env:
-          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
-        run: |
-          .build/release/mirroir-mcp test --verbose Tests/Fixtures/skills/fake-mirroring-compiled.yaml
-
+      # The mirroir-run lanes come first, ahead of the ~25-minute integration
+      # suite: each takes minutes, so a broken lane fails the job early
+      # instead of after the suite. Every lane launches its own pack, so none
+      # depends on what ran before it.
+      #
       # Both toolchains in one job: the Swift server built above, and the Rust
       # runner that hands it an ios block. This is the only lane where a change
       # on either side of that boundary meets the other — the report format,
@@ -177,7 +134,6 @@ jobs:
         working-directory: runner
         env:
           MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
           MIRROIR_MCP_BIN: ${{ github.workspace }}/.build/release/mirroir-mcp
           # The global drift-defaults.yaml layer the runner requires, from the
           # skills clone made at the top of this job.
@@ -218,7 +174,6 @@ jobs:
         working-directory: runner
         env:
           MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
           MIRROIR_MCP_BIN: ${{ github.workspace }}/.build/release/mirroir-mcp
           MIRROIR_SKILLS: ${{ github.workspace }}/../mirroir-skills
           RUST_LOG: info,mirroir_run::target::ios=debug
@@ -256,7 +211,6 @@ jobs:
         working-directory: runner
         env:
           MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
           MIRROIR_MCP_BIN: ${{ github.workspace }}/.build/release/mirroir-mcp
           # The built-in ollama:<model> agent posts to localhost:11434, where
           # the stub listens; no agent profile is needed.
@@ -271,6 +225,10 @@ jobs:
           cp samples/game-scene/skills/*.md "$MIRROIR_SKILLS/"
           cp "${{ github.workspace }}/../mirroir-skills/drift-defaults.yaml" "$MIRROIR_SKILLS/"
           python3 -I samples/game-scene/fixtures/stub_vision.py 11434 move &
+          # The integration tests run after this lane: free 11434 for them
+          # however the step ends, so nothing they start meets the stub.
+          stub_pid=$!
+          trap 'kill "$stub_pid" 2>/dev/null || true' EXIT
           python3 -I -c "import socket, time
           for _ in range(60):
               try:
@@ -322,6 +280,119 @@ jobs:
             echo "budget-typo: a max_touches budget key validated"; exit 1
           fi
 
+      # The scene: step's board mechanics, deterministically: FakeMirroring's
+      # Grid Frames pack is a 3x3 board (a1 then c3 reaches GOAL, a1 then any
+      # other cell shows DEFAITE). The skill declares `decider: required`, so
+      # the stub vision model (samples/board-scene/fixtures/stub_vision.py
+      # --reading, test-only) only reads the frame, and the stub move picker
+      # each scenario names (fixtures/stub_decider.py MODE) chooses the cells.
+      # Each case asserts its exit code and scene report: the goal reached
+      # passes (0), a wrong move fails (1), waiting every frame spends the
+      # budget (66), a failing picker stops with decider_failed (1), and a
+      # step that names no picker is refused before any touch (1).
+      - name: mirroir-run → board scene (FakeMirroring)
+        timeout-minutes: 20
+        working-directory: runner
+        env:
+          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
+          MIRROIR_MCP_BIN: ${{ github.workspace }}/.build/release/mirroir-mcp
+          MIRROIR_SCENE_AGENT: ollama:scene-stub
+          RUST_LOG: info,mirroir_run::target::ios=debug
+        run: |
+          set -euo pipefail
+          # The no-decider case must find no picker in the environment either.
+          unset MIRROIR_SCENE_DECIDER
+          export MIRROIR_SKILLS="$RUNNER_TEMP/board-skills"
+          mkdir -p "$MIRROIR_SKILLS"
+          cp samples/board-scene/skills/*.md "$MIRROIR_SKILLS/"
+          cp "${{ github.workspace }}/../mirroir-skills/drift-defaults.yaml" "$MIRROIR_SKILLS/"
+          # The decider runs with no shell, so the script itself must be executable.
+          [ -x samples/board-scene/fixtures/stub_decider.py ] \
+            || { echo "stub_decider.py is not executable (git mode 100755)"; exit 1; }
+          # The scene lane's stub (which names a control) still holds 11434:
+          # stop it and wait for the port to free before starting the reader.
+          pkill -f "fixtures/stub_vision.py" || true
+          python3 -I -c "import socket, time
+          for _ in range(60):
+              try:
+                  socket.create_connection(('127.0.0.1', 11434), 1).close()
+                  time.sleep(0.5)
+              except OSError:
+                  break
+          else:
+              raise SystemExit('port 11434 never freed')"
+          python3 -I samples/board-scene/fixtures/stub_vision.py 11434 --reading &
+          stub_pid=$!
+          trap 'kill "$stub_pid" 2>/dev/null || true' EXIT
+          python3 -I -c "import socket, time
+          for _ in range(60):
+              try:
+                  socket.create_connection(('127.0.0.1', 11434), 1).close(); break
+              except OSError:
+                  time.sleep(0.5)
+          else:
+              raise SystemExit('stub vision never listened')"
+
+          run_case() {
+            local scenario=$1 expected=$2
+            rm -rf target/mirroir-ios
+            set +e
+            ./target/debug/mirroir-run --run-scenario "samples/board-scene/scenarios/$scenario.yaml" \
+              > "board-$scenario.log" 2>&1
+            local code=$?
+            set -e
+            cat "board-$scenario.log"
+            if [ "$code" -ne "$expected" ]; then
+              echo "$scenario exited $code, expected $expected"; exit 1
+            fi
+          }
+          # The scene's captures in the report mirroir-mcp wrote for the block.
+          scene_field() {
+            python3 -I - "$1" <<'EOF'
+          import base64, glob, json, sys
+          report = json.load(open(sorted(glob.glob("target/mirroir-ios/**/ios-report.json", recursive=True))[-1]))
+          body = report["suites"][0]["specs"][0]["tests"][0]["results"][0]["attachments"][0]["body"]
+          scene = next(iter(json.loads(base64.b64decode(body))["scenes"].values()))
+          print(scene[sys.argv[1]])
+          EOF
+          }
+          expect_field() {
+            local scenario=$1 field=$2 expected=$3 actual
+            actual=$(scene_field "$field")
+            if [ "$actual" != "$expected" ]; then
+              echo "$scenario: $field is $actual, expected $expected"; exit 1
+            fi
+          }
+
+          run_case reach 0
+          expect_field reach verdict pass
+          expect_field reach frames_to_predicate 1
+          expect_field reach decider_calls 1
+          expect_field reach waits 0
+
+          run_case wrong 1
+          expect_field wrong verdict fail
+          expect_field wrong reason fail
+          expect_field wrong decider_calls 1
+
+          run_case wait 66
+          expect_field wait reason max_frames
+          expect_field wait frames 3
+          expect_field wait waits 3
+          expect_field wait decider_calls 3
+
+          run_case broken 1
+          expect_field broken verdict fail
+          expect_field broken reason decider_failed
+
+          run_case no-decider 1
+          if ! grep -qF "Refusing to run: 1 scene step(s) cannot play." board-no-decider.log; then
+            echo "no-decider: no scene refusal"; exit 1
+          fi
+          if ! grep -qF "decider" board-no-decider.log; then
+            echo "no-decider: the refusal does not name the missing decider"; exit 1
+          fi
+
       # The recorder's emit, off-device: a checked-in recording renders a
       # .mirroir/ scenario that mirroir-run's own validator accepts, and a
       # recording whose tap carries no label is refused with nothing written.
@@ -367,7 +438,6 @@ jobs:
         timeout-minutes: 10
         env:
           MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
           MIRROIR_COMPONENT_DETECTION: heuristic
           MIRROIR_AGENT_TRANSPORT: http
           MIRROIR_SCREEN_DESCRIBER_MODE: ocr
@@ -427,7 +497,6 @@ jobs:
         timeout-minutes: 10
         env:
           MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
           MIRROIR_COMPONENT_DETECTION: heuristic
           MIRROIR_AGENT_TRANSPORT: http
           MIRROIR_SCREEN_DESCRIBER_MODE: ocr
@@ -459,7 +528,6 @@ jobs:
         working-directory: runner
         env:
           MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-          MIRROIR_PROCESS_NAME: FakeMirroring
           MIRROIR_MCP_BIN: ${{ github.workspace }}/.build/release/mirroir-mcp
           # The global drift-defaults.yaml layer the runner requires, from the
           # skills clone made at the top of this job.
@@ -526,6 +594,67 @@ jobs:
           mv "$BLOCKS" "$CONTRACT_DIR/$consumer-ios-blocks"
           done
 
+      # The integration suite starts from a FakeMirroring no lane has driven,
+      # as setup-fake-mirroring leaves it; the lanes above leave their own
+      # packs open. Quit it and launch it the way the action does.
+      - name: Relaunch FakeMirroring for the integration tests
+        run: |
+          set -euo pipefail
+          osascript -e 'quit app id "com.jfarcand.FakeMirroring"' 2>/dev/null || true
+          for _ in $(seq 1 20); do
+            pgrep -x FakeMirroring >/dev/null || break
+            sleep 0.5
+          done
+          pkill -9 -x FakeMirroring 2>/dev/null || true
+          open .build/release/FakeMirroring.app
+          sleep 3
+
+      - name: Integration tests (FakeMirroring)
+        env:
+          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
+        run: swift test --filter IntegrationTests
+
+      - name: Post-test runner diagnostics (on failure)
+        if: failure()
+        run: |
+          echo "=== ps for FakeMirroring after tests ==="
+          ps -ef | grep -i FakeMirroring | grep -v grep || echo "FakeMirroring not running"
+          echo ""
+          echo "=== CGWindowList via osascript ==="
+          osascript -e 'tell application "System Events" to get every process whose visible is true' 2>&1 | head -10 || true
+          echo ""
+          echo "=== FakeMirroring NSLog output (last 10 min, full) ==="
+          log show --last 10m --predicate 'process == "FakeMirroring"' --info --debug 2>&1 | grep -E "fakemirror-tap|FakeMirroring\]" | tail -200 || true
+          echo ""
+          echo "=== WindowServer log (last 5 min) ==="
+          log show --last 5m --predicate 'subsystem == "com.apple.WindowServer"' --info 2>&1 | tail -100 || true
+          echo ""
+          echo "=== HIToolbox / event tap log (last 5 min) ==="
+          log show --last 5m --predicate 'subsystem == "com.apple.HIToolbox" OR subsystem == "com.apple.coreservices"' --info 2>&1 | tail -50 || true
+
+      - name: Test runner (FakeMirroring)
+        env:
+          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
+        run: |
+          set -euo pipefail
+          .build/release/mirroir-mcp test --junit test-results.xml --verbose Tests/Fixtures/skills/fake-mirroring-check.yaml 2>&1 | tee test-runner.log
+          # Every capture must come from ScreenCaptureKit: a fallback to the
+          # screencapture CLI is a degraded capture path, even when steps pass.
+          grep -qE "capture: sck=[1-9][0-9]* fallback=0$" test-runner.log \
+            || { echo "capture fell back to the screencapture CLI:"; grep "capture:" test-runner.log; exit 1; }
+
+      - name: Compile skill (FakeMirroring)
+        env:
+          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
+        run: |
+          .build/release/mirroir-mcp compile Tests/Fixtures/skills/fake-mirroring-compiled.yaml
+
+      - name: Test compiled skill (FakeMirroring)
+        env:
+          MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
+        run: |
+          .build/release/mirroir-mcp test --verbose Tests/Fixtures/skills/fake-mirroring-compiled.yaml
+
       - name: Upload emitted Clock contract
         if: always()
         uses: actions/upload-artifact@v7
@@ -574,7 +703,7 @@ jobs:
           lines = sys.stdin.readlines()
           obj = json.loads(lines[1])
           tools = [t['name'] for t in obj['result']['tools']]
-          expected = {'screenshot','start_recording','stop_recording','tap','swipe','drag','type_text','press_key','long_press','double_tap','touch','pinch','rotate','hold_keys','shake','launch_app','open_url','press_home','press_app_switcher','press_back','spotlight','get_orientation','status','check_health','describe_screen','list_skills','get_skill','scroll_to','scroll_to_top','read_scrolling_list','reset_app','measure','set_network','list_targets','switch_target','record_step','save_compiled','generate_skill','calibrate_component','classify_screen'}
+          expected = {'run_steps','screenshot','start_recording','stop_recording','tap','swipe','drag','type_text','press_key','long_press','double_tap','touch','pinch','rotate','hold_keys','shake','launch_app','open_url','press_home','press_app_switcher','press_back','spotlight','get_orientation','status','check_health','describe_screen','list_skills','get_skill','scroll_to','scroll_to_top','read_scrolling_list','reset_app','measure','set_network','list_targets','switch_target','record_step','save_compiled','generate_skill','calibrate_component','classify_screen'}
           assert set(tools) == expected, f'Expected: {expected}\nGot: {set(tools)}\nMissing: {expected - set(tools)}\nExtra: {set(tools) - expected}'
           print(f'tools/list: {len(tools)} tools registered')
           "
@@ -589,11 +718,12 @@ jobs:
           obj = json.loads(lines[1])
           tools = {t['name']: t for t in obj['result']['tools']}
 
-          # tap requires x and y
+          # tap takes visible text, or x and y; the handler refuses a call with neither
           tap = tools['tap']['inputSchema']
           assert 'x' in tap['properties'], 'tap missing x'
           assert 'y' in tap['properties'], 'tap missing y'
-          assert set(tap.get('required', [])) == {'x', 'y'}, 'tap should require x and y'
+          assert 'text' in tap['properties'], 'tap missing text'
+          assert tap.get('required', []) == [], 'tap should require nothing: text or x and y'
 
           # swipe requires from_x, from_y, to_x, to_y
           swipe = tools['swipe']['inputSchema']

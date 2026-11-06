@@ -278,6 +278,12 @@ extension EnvConfig {
         readBool("describeScreenOmitScreenshot", envVar: "MIRROIR_OMIT_SCREENSHOT", default: false)
     }
 
+    /// When true, status, check_health and doctor ask the npm registry, at most
+    /// once a day, whether a newer mirroir-mcp is published, and say so.
+    public static var updateCheck: Bool {
+        readBool("updateCheck", default: true)
+    }
+
     // MARK: - YOLO Element Detection
 
     /// OCR backend selection: "auto", "vision", "yolo", or "both".
@@ -414,9 +420,12 @@ extension EnvConfig {
                    default: "com.apple.ScreenContinuity")
     }
 
-    public static var mirroringProcessName: String {
-        readString("mirroringProcessName", envVar: "MIRROIR_PROCESS_NAME",
-                   default: "iPhone Mirroring")
+    /// Bundle ID of the process that draws notification banners. Its
+    /// display-sized overlay window over the target means a banner is up, so a
+    /// click waits for it to clear instead of landing on the banner.
+    public static var notificationCenterBundleID: String {
+        readString("notificationCenterBundleID", envVar: "MIRROIR_NOTIFICATION_CENTER_BUNDLE_ID",
+                   default: "com.apple.notificationcenterui")
     }
 
     /// Post mouse events directly to the target PID via `postToPid` instead

@@ -75,13 +75,8 @@ extension MirroirMCP {
                     return .error("Target '\(ctx.name)' is not running")
                 }
 
-                let state = bridge.getState()
-                if state == .paused {
-                    if let menuBridge = bridge as? (any MenuActionCapable) {
-                        _ = menuBridge.pressResume()
-                        usleep(EnvConfig.resumeFromPausedUs)
-                    }
-                }
+                // Read-only: a paused session is captured as it is (the overlay
+                // shows), never resumed — the user may have paused it on purpose.
 
                 // A settle window of 0 is an explicit opt-out: the caller wants
                 // the first available frame and accepts that it may be stale.
@@ -137,7 +132,9 @@ extension MirroirMCP {
                 frame lags the device: a frame taken right after an action can still show \
                 the pre-action screen (and in vision mode a transitional frame would still \
                 be billed). Use settle_ms to tune the wait, or 0 on a constantly animated \
-                screen such as a game, which never settles.
+                screen such as a game, which never settles. \
+                To read one value, pass query (only elements containing that text \
+                are listed) and text_only (no coordinates) with omit_screenshot.
                 """,
             inputSchema: [
                 "type": .string("object"),
@@ -151,6 +148,17 @@ extension MirroirMCP {
                         "type": .string("boolean"),
                         "description": .string(
                             "Omit the screenshot image from the response to save context window space (default: uses MIRROIR_OMIT_SCREENSHOT env var, or false)"),
+                    ]),
+                    "query": .object([
+                        "type": .string("string"),
+                        "description": .string(
+                            "List only elements whose text contains this, ignoring case "
+                            + "and accents (e.g. \"°\" for temperatures). Icons are omitted."),
+                    ]),
+                    "text_only": .object([
+                        "type": .string("boolean"),
+                        "description": .string(
+                            "List element text without tap coordinates (default: false)"),
                     ]),
                     "settle_ms": .object([
                         "type": .string("integer"),
@@ -171,16 +179,14 @@ extension MirroirMCP {
                 guard bridge.findProcess() != nil else {
                     return .error("Target '\(ctx.name)' is not running")
                 }
-                let state = bridge.getState()
-                if state == .paused {
-                    if let menuBridge = bridge as? (any MenuActionCapable) {
-                        _ = menuBridge.pressResume()
-                        usleep(EnvConfig.resumeFromPausedUs)
-                    }
-                }
+                // Read-only: a paused session is described as it is, never resumed.
+                let paused = bridge.getState() == .paused
 
                 let scrollEnabled = args["scroll"]?.asBool() ?? false
                 let omitScreenshot = args["omit_screenshot"]?.asBool() ?? EnvConfig.describeScreenOmitScreenshot
+                let query = args["query"]?.asString()
+                    .flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+                let textOnly = args["text_only"]?.asBool() ?? false
 
                 // Full-page scroll mode: collect all elements across viewports
                 if scrollEnabled {
@@ -193,11 +199,13 @@ extension MirroirMCP {
                     }
 
                     var lines = ["Screen elements (page-absolute tap coordinates in points):"]
-                    for el in scrollResult.elements.sorted(by: { $0.tapY < $1.tapY }) {
-                        lines.append("- \"\(el.text)\" at (\(Int(el.tapX)), \(Int(el.tapY)))")
-                    }
+                    let listed = DescribeScreenFilter.matching(query, in: scrollResult.elements)
+                    lines += DescribeScreenFilter.lines(for: listed, textOnly: textOnly)
                     if scrollResult.elements.isEmpty {
                         lines.append("(no text detected)")
+                    } else if let query, listed.isEmpty {
+                        lines.append(DescribeScreenFilter.noMatchLine(
+                            query: query, onScreen: scrollResult.elements.count))
                     }
                     lines.append("")
                     lines.append("_meta: scroll_count=\(scrollResult.scrollCount) total_offset=\(Int(scrollResult.totalScrollOffset)) element_count=\(scrollResult.elements.count)")
@@ -220,8 +228,11 @@ extension MirroirMCP {
                 }
 
                 var lines = ["Screen elements (tap coordinates in points):"]
-                for el in result.elements.sorted(by: { $0.tapY < $1.tapY }) {
-                    lines.append("- \"\(el.text)\" at (\(Int(el.tapX)), \(Int(el.tapY)))")
+                let listed = DescribeScreenFilter.matching(query, in: result.elements)
+                lines += DescribeScreenFilter.lines(for: listed, textOnly: textOnly)
+                if let query, listed.isEmpty, !result.elements.isEmpty {
+                    lines.append(DescribeScreenFilter.noMatchLine(
+                        query: query, onScreen: result.elements.count))
                 }
                 if let failure = result.ocrFailure {
                     // Never report a broken engine as a blank screen: the two
@@ -237,7 +248,7 @@ extension MirroirMCP {
                 } else if result.elements.isEmpty {
                     lines.append("(no text detected)")
                 }
-                if !result.icons.isEmpty {
+                if !result.icons.isEmpty, query == nil {
                     lines.append("")
                     lines.append("Unlabeled icons (estimated positions):")
                     for icon in result.icons.sorted(by: { $0.tapX < $1.tapX }) {
@@ -250,6 +261,11 @@ extension MirroirMCP {
                     for hint in result.hints {
                         lines.append("- \(hint)")
                     }
+                }
+                if paused {
+                    lines.append("")
+                    lines.append("Note: '\(ctx.name)' is paused, so this frame shows the "
+                        + "interruption, not the app. Nothing was pressed to resume it.")
                 }
                 lines.append("")
                 lines.append("_meta: ocr_time_ms=\(result.ocrTimeMs) recognition_level=\(EnvConfig.ocrRecognitionLevel) element_count=\(result.elements.count)"
