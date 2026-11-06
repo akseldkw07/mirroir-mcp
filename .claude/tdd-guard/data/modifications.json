@@ -1,0 +1,12 @@
+{
+  "session_id": "458ae459-a0fe-42c3-83e1-f779b07bde16",
+  "transcript_path": "/Users/Akseldkw/.claude-personal/projects/-Users-Akseldkw-coding-mcp-mirroir-mcp/458ae459-a0fe-42c3-83e1-f779b07bde16.jsonl",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/Users/Akseldkw/coding/mcp/mirroir-mcp/Sources/mirroir-mcp/InputTools.swift",
+    "old_string": "                // Compare captures before and after, so a dropped gesture or the\n                // end of a list reads as \"did not change\" rather than a bare \"Swiped\".",
+    "new_string": "                // Compare captures so a dropped gesture or a list's end reads as \"did not change\", not \"Swiped\".",
+    "replace_all": false
+  }
+}

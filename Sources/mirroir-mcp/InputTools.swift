@@ -170,8 +170,7 @@ extension MirroirMCP {
                 case .invalid(let msg): return .error(msg)
                 }
 
-                // Compare captures before and after, so a dropped gesture or the
-                // end of a list reads as "did not change" rather than a bare "Swiped".
+                // Compare captures so a dropped gesture or a list's end reads as "did not change", not "Swiped".
                 let outcome = SwipeVerifier.run(
                     capture: ctx.capture, distance: max(abs(toX - fromX), abs(toY - fromY))
                 ) {
