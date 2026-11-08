@@ -15,14 +15,15 @@ extension InputSimulation {
     /// Trigger a shake gesture on the mirrored iPhone.
     /// Sends Ctrl+Cmd+Z via CGEvent which triggers shake-to-undo in iOS apps.
     func shake() -> TypeResult {
-        let prep = prepareWindowKeyboardInput(tag: "shake")
+        let prep = prepareKeyCall(tag: "shake")
+        defer { prep.handback.finish(targetPID: targetPID) }
         if let keyboardError = prep.error {
             return TypeResult(success: false, error: keyboardError)
         }
 
         DebugLog.log("shake", "sending shake gesture via CGEvent")
 
-        let result = CGEventInput.shake(targetPID: prep.targetPID)
+        let result = CGEventInput.shake(targetPID: nil)
         DebugLog.log("shake", "CGEvent=\(result ? "OK" : "FAILED")")
         if result {
             return TypeResult(success: true, error: nil)
@@ -79,7 +80,8 @@ extension InputSimulation {
     /// re-pastes the stale value. A paste that is not seen — or cannot be read
     /// back, like emoji — fails the call instead of passing silently.
     func typeText(_ text: String) -> TypeResult {
-        let prep = prepareWindowKeyboardInput(tag: "typeText")
+        let prep = prepareKeyCall(tag: "typeText")
+        defer { prep.handback.finish(targetPID: targetPID) }
         if let keyboardError = prep.error {
             return TypeResult(success: false, error: keyboardError)
         }
@@ -91,7 +93,7 @@ extension InputSimulation {
         let pastes = segments.contains { $0.method == .paste }
 
         let entry = VerifiedTextEntry(
-            typeKeys: { [self] run in typeViaCGEvent(run, targetPID: prep.targetPID) },
+            typeKeys: { [self] run in typeViaCGEvent(run, targetPID: nil) },
             paste: { [self] run in pasteRun(run) },
             readScreen: { [self] in screenLines() },
             sleep: { usleep($0) },
@@ -196,7 +198,8 @@ extension InputSimulation {
     /// via CGEvent keyboard events. Also handles single printable characters with modifiers
     /// (e.g., Cmd+L for Safari address bar).
     func pressKey(keyName: String, modifiers: [String] = []) -> TypeResult {
-        let prep = prepareWindowKeyboardInput(tag: "pressKey")
+        let prep = prepareKeyCall(tag: "pressKey")
+        defer { prep.handback.finish(targetPID: targetPID) }
         if let keyboardError = prep.error {
             return TypeResult(success: false, error: keyboardError)
         }
@@ -228,7 +231,7 @@ extension InputSimulation {
             flags.insert(flag)
         }
 
-        let result = keyPoster.postKey(keycode: keycode, flags: flags, targetPID: prep.targetPID)
+        let result = keyPoster.postKey(keycode: keycode, flags: flags, targetPID: nil)
         DebugLog.log("pressKey", "CGEvent=\(result ? "OK" : "FAILED")")
         if result {
             return TypeResult(success: true, error: nil)

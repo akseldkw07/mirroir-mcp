@@ -36,8 +36,10 @@ final class SpotlightLaunchTests: XCTestCase {
     private func launch(
         name: String = "Horloge", screens: [ScreenDescriber.DescribeResult]
     ) -> (error: String?, bridge: StubBridge, poster: RecordingWindowPoster, keys: RecordingKeyPoster) {
+        // Typing takes the front (iPhone Mirroring forwards keys only while it is
+        // active), so the stub reports the activation as done.
         let bridge = StubBridge()
-        bridge.frontmost = false
+        bridge.frontmost = true
         bridge.windowInfo = WindowInfo(
             windowID: 4242, position: CGPoint(x: 100, y: 50),
             size: CGSize(width: 410, height: 898), pid: 777)
@@ -47,8 +49,14 @@ final class SpotlightLaunchTests: XCTestCase {
         let keys = RecordingKeyPoster()
         let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
                                     pasteVerifier: describer, keyPoster: keys,
-                                    windowPoster: poster)
+                                    windowPoster: poster, macFront: inertMac)
         return (input.launchApp(name: name), bridge, poster, keys)
+    }
+
+    /// A Mac with no front owner: the key calls' handback has nothing to return,
+    /// and no real window is brought forward.
+    private var inertMac: MacFront {
+        MacFront(ownerPID: { nil }, bringForward: { _ in }, pointer: { nil }, movePointer: { _ in })
     }
 
     /// Idle Spotlight on an XR (12:28): a suggested tile, no query held.

@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 //
 // ABOUTME: Tests which input InputSimulation posts straight to the target's window and which keeps the HID path.
-// ABOUTME: Pins taps and keys to the window poster with no activation, and swipes and drags off it.
+// ABOUTME: Pins taps to the window poster with no activation; keys, drags and HID swipes need the front.
 
 import CoreGraphics
 import XCTest
@@ -111,28 +111,16 @@ final class WindowDeliveryTests: XCTestCase {
 
     // MARK: - Keys
 
-    func testKeysGoToTheTargetProcessAfterOneKeyFocusRecord() {
+    /// iPhone Mirroring forwards keys only while it is the active app, so a
+    /// window poster does not spare keys the front (see FrontHandbackTests for
+    /// the front being returned afterwards).
+    func testWithAWindowPosterKeysStillNeedTheFront() {
         let poster = RecordingWindowPoster()
         let keys = RecordingKeyPoster()
-        let input = makeInput(poster: poster, keys: keys)
-
-        XCTAssertTrue(input.pressKey(keyName: "return", modifiers: []).success)
-        XCTAssertTrue(input.typeText("ab").success)
-
-        XCTAssertEqual(poster.keyFocusWindows, [windowID, windowID], "one focus record per call")
-        XCTAssertEqual(keys.targets, [windowPID, windowPID, windowPID])
-    }
-
-    func testAKeyFocusRecordThatIsNotPostedSendsNoKeys() {
-        let poster = RecordingWindowPoster()
-        poster.focusSucceeds = false
-        let keys = RecordingKeyPoster()
-
         let result = makeInput(poster: poster, keys: keys).pressKey(keyName: "return", modifiers: [])
-
-        XCTAssertFalse(result.success)
-        XCTAssertEqual(result.error, "Could not give 'iphone' keyboard focus. No input was sent.")
+        XCTAssertFalse(result.success, "the HID path refuses a target it cannot bring to the front")
         XCTAssertTrue(keys.targets.isEmpty)
+        XCTAssertTrue(poster.keyFocusWindows.isEmpty, "no key focus record is posted for keys")
     }
 
     func testWithoutAWindowPosterKeysNeedTheFront() {

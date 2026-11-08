@@ -1,7 +1,7 @@
 // Copyright 2026 jfarcand@apache.org
 // Licensed under the Apache License, Version 2.0
 //
-// ABOUTME: Focus-free clicks and keystrokes for one window, posted as SkyLight event records addressed by window ID.
+// ABOUTME: Focus-free clicks and key-window records for one window, posted as SkyLight event records addressed by window ID.
 // ABOUTME: The user's front app and cursor stay where they are; taps, double taps and long presses are built on it.
 
 import CoreGraphics
@@ -46,7 +46,9 @@ extension WindowEventPosting {
 /// Measured on macOS 26.5 against iPhone Mirroring and FakeMirroring: taps,
 /// double taps, long presses and keystrokes land with another app in front;
 /// drag records lose their intermediate points, so drags and swipes stay on
-/// the HID path.
+/// the HID path. On macOS 27 (measured 2026-11-08) keystrokes no longer do:
+/// iPhone Mirroring forwards keys to the phone only while it is the active
+/// app, so key calls take the front and hand it back (`prepareKeyCall`).
 final class SkyLightWindowPoster: WindowEventPosting, @unchecked Sendable {
 
     private typealias ProcessForPID = @convention(c) (pid_t, UnsafeMutableRawPointer) -> Int32

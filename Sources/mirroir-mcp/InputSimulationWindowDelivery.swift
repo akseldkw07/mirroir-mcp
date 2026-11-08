@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 //
 // ABOUTME: Chooses between posting input to the target's window directly and the HID path that brings it to the front.
-// ABOUTME: Taps, keystrokes and escape clicks go to the window when a poster can address it; the rest keeps HID.
+// ABOUTME: Taps and escape clicks go to the window when a poster can address it; keys borrow the front, then return it.
 
 import CoreGraphics
 import Foundation
@@ -17,27 +17,16 @@ extension InputSimulation {
         return windowPoster
     }
 
-    /// Keyboard preamble for type_text, press_key and shake. Checks that the
-    /// target is connected, then makes its window the key window of its own
-    /// app without activating it, and returns the process to post key events
-    /// to. A target with no window to address goes through
-    /// `prepareKeyboardInput`, which brings it to the front, and its events
-    /// go through the HID tap (`targetPID` nil).
-    func prepareWindowKeyboardInput(tag: String) -> (targetPID: pid_t?, error: String?) {
-        guard windowPoster != nil else { return (nil, prepareKeyboardInput(tag: tag)) }
-        if let stateError = ensureConnected(tag: tag) {
-            return (nil, stateError)
-        }
-        // Read after the connection check: freeing a paused session can move the window.
-        guard let info = bridge.getWindowInfo(), let poster = windowDelivery(for: info) else {
-            return (nil, prepareKeyboardInput(tag: tag))
-        }
-        guard poster.focusKeys(in: info) else {
-            DebugLog.log(tag, "REJECTED: key focus record not posted")
-            return (nil, "Could not give '\(bridge.targetName)' keyboard focus. No input was sent.")
-        }
-        DebugLog.log(tag, "keys to pid \(info.pid), window \(info.windowID); front app untouched")
-        return (info.pid, nil)
+    /// Keyboard preamble for type_text, press_key and shake. iPhone Mirroring
+    /// forwards keys to the phone only while it is the active app: on macOS 27
+    /// (measured 2026-11-08), keys posted to its process with another app in
+    /// front never reached the phone, however they were addressed. So a key
+    /// call brings the target to the front through `prepareKeyboardInput` and
+    /// its keys go through the HID tap; the caller finishes the returned
+    /// handback once its keys are sent, which gives the user's app the front back.
+    func prepareKeyCall(tag: String) -> (handback: FrontHandback, error: String?) {
+        let handback = beginFrontHandback()
+        return (handback, prepareKeyboardInput(tag: tag))
     }
 
     /// The click the session-escape plugins free a paused session with, at a

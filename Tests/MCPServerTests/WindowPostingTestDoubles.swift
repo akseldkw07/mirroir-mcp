@@ -23,7 +23,6 @@ final class RecordingWindowPoster: WindowEventPosting, @unchecked Sendable {
     private(set) var keyFocusWindows: [CGWindowID] = []
     private(set) var stampedPoints: [CGPoint] = []
     var canStampEvents = true
-    var focusSucceeds = true
 
     func postButton(down: Bool, at point: CGPoint, clickCount: Int, in window: WindowInfo) -> Bool {
         buttons.append(Button(down: down, point: point, clickCount: clickCount, windowID: window.windowID))
@@ -32,7 +31,7 @@ final class RecordingWindowPoster: WindowEventPosting, @unchecked Sendable {
 
     func focusKeys(in window: WindowInfo) -> Bool {
         keyFocusWindows.append(window.windowID)
-        return focusSucceeds
+        return true
     }
 
     func stamp(_ event: CGEvent, at point: CGPoint, in window: WindowInfo) {

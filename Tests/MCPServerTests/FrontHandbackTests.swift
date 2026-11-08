@@ -81,4 +81,24 @@ final class FrontHandbackTests: XCTestCase {
         handback.finish(targetPID: input.targetPID)
         XCTAssertEqual(mac.broughtForward, [iTerm])
     }
+
+    /// macOS 27 forwards keys to the phone only while iPhone Mirroring is the
+    /// active app (measured 2026-11-08: keys posted to its process with another
+    /// app in front never reached Spotlight), so a key call borrows the front
+    /// the way a swipe does and returns it when its keys are sent.
+    func testAKeyCallTakesTheFrontForItsKeysAndReturnsIt() {
+        let mac = ScriptedMac(owners: [])
+        let poster = RecordingWindowPoster()
+        let keys = RecordingKeyPoster()
+        let input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY, keyPoster: keys,
+                                    windowPoster: poster, macFront: mac.front)
+        mac.owners = [iTerm, input.targetPID, iTerm, input.targetPID]
+
+        XCTAssertTrue(input.pressKey(keyName: "return", modifiers: []).success)
+        XCTAssertTrue(input.typeText("ab").success)
+
+        XCTAssertEqual(mac.broughtForward, [iTerm, iTerm], "each call returns the front it took")
+        XCTAssertEqual(keys.targets, [nil, nil, nil], "keys go through the HID tap to the active mirror")
+        XCTAssertTrue(poster.keyFocusWindows.isEmpty)
+    }
 }
