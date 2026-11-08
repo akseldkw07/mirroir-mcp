@@ -138,6 +138,14 @@ final class SpotlightDetectorTests: XCTestCase {
         XCTAssertFalse(SpotlightDetector.holdsQuery(elements: screen))
     }
 
+    /// Spanish iPhone, iOS 26, 2026-11-08: "r" typed; Spotlight completed it to Reloj (Clock).
+    func testASpanishTopHitWithAFieldSayingOpenMeansReturnOpensAnApp() {
+        let screen = [point("Mejor resultado", 59, 93), point("Reloj", 57, 134),
+                      point("Recordatorios", 185, 135), point("a reloj - Abrir", 79, 624)]
+        XCTAssertTrue(SpotlightDetector.holdsQuery(elements: screen))
+        XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: screen))
+    }
+
     func testTheIdlePageHoldsNoQuery() {
         let screen = [point("Suggestions de Siri", 97, 109), point(icon, 171, 189), point("Notes", 170, 218)]
         XCTAssertFalse(SpotlightDetector.holdsQuery(elements: screen))

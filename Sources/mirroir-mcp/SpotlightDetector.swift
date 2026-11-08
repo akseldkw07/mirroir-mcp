@@ -22,7 +22,7 @@ enum SpotlightDetector {
     /// file or message behind it has none (measured on an XR, iOS 26: "Keynote",
     /// not installed, lists a web suggestion and an App Store row under
     /// "Suggestions").
-    static let topHitHeadings: [String] = ["Top Hit", "Meilleur résultat"]
+    static let topHitHeadings: [String] = ["Top Hit", "Meilleur résultat", "Mejor resultado"]
 
     /// What the search field adds after the query when Return opens an app
     /// ("Notes — Ouvrir"); on any other top result it adds that result's title.
