@@ -2,26 +2,32 @@
 
 ## Focus Stealing
 
-Every input tool (`tap`, `type_text`, `press_key`, `swipe`, `drag`, `long_press`, `double_tap`, `shake`, and `press_back` — which OCR-taps the back chevron) must make iPhone Mirroring the frontmost app before sending input events. This means the tool will steal keyboard focus from whatever app you are currently using.
+On iPhone Mirroring, swipes do not take the front: the app you are using keeps keyboard focus and the cursor does not move. On macOS 27, window-addressed clicks and keystrokes no longer reach the iPhone, so taps and keys bring iPhone Mirroring forward briefly; drags and two-finger gestures do so for their duration. The front is then returned.
 
-### Why
+| Input | Front app | How it reaches the iPhone |
+|-------|-----------|---------------------------|
+| `tap`, `double_tap`, `long_press`, `press_back` (an OCR tap on the back chevron) | Borrowed | HID clicks at the point, which need iPhone Mirroring in front. It is activated for the click; the previous app gets the front back once input goes quiet, so a run of taps switches focus once. |
+| `type_text`, `press_key`, `shake`, the typing inside `launch_app` and `open_url` | Borrowed | HID key events. iPhone Mirroring forwards keys only while it is the active app, so it is activated for the keys, then the previous front app gets the front back. |
+| `swipe`, `scroll_to` | Kept | Scroll events addressed to the iPhone Mirroring window. They land with the mirror fully covered and the cursor elsewhere. |
+| `drag`, `pinch`, `rotate` | Borrowed | HID events, which macOS routes to the frontmost app. iPhone Mirroring is activated for the gesture (measured: about 1 s), then the previous front app and the pointer are returned. |
+| `hold_keys`, `touch` | Taken | HID events that span the gesture or several calls. iPhone Mirroring is activated first and keeps the front afterwards. |
 
-CGEvent input is routed by macOS to the frontmost application. There is no API to direct input events to a background window.
+On macOS 26.5, taps and keystrokes also went to the window without activating it. On macOS 27 (measured 2026-11-08) window click records, stamped click events and process-addressed keystrokes all left the iPhone untouched, with the mirror in front or not, while HID clicks and keys landed; swipes still land as window events. With Spotify in front and the front app sampled every second, `launch_app` held iPhone Mirroring in front for about a second while typing, then returned Spotify; swipes never moved it.
 
-### What This Means in Practice
+### Why Gestures Still Take the Front
 
-If you are typing in a terminal or editor and an MCP tool fires, iPhone Mirroring will become frontmost and your terminal loses focus. After the tool completes, iPhone Mirroring retains focus — the server intentionally does not switch back to avoid per-call Space jitter.
+On macOS 26.5, a drag sent as window events or window records loses its intermediate points (iOS sees a press and a release, so a drag reads as a tap). Drags and multi-step gestures therefore stay on HID input, which needs iPhone Mirroring in front. Swipes do not: measured on macOS 26.5 with iTerm in front and Finder covering the mirror, window-addressed scroll events moved App Store lists and paged Weather with the front app unchanged in every sample. A swipe that scrolls nothing with the cursor path, such as pulling the Photos grid to older photos, scrolls nothing here either. Generic macOS windows keep their activating behavior.
 
-Read-only tools (`screenshot`, `describe_screen`, `start_recording`, `stop_recording`, `status`, `get_orientation`, `check_health`, `list_skills`, `get_skill`, `list_targets`, `calibrate_component`) use the Accessibility API and do **not** steal focus.
+Read-only tools (`screenshot`, `describe_screen`, `start_recording`, `stop_recording`, `status`, `get_orientation`, `check_health`, `list_skills`, `get_skill`, `list_targets`, `calibrate_component`) do **not** steal focus, with one exception: when ScreenCaptureKit cannot deliver a frame, capture falls back to `screencapture`, which activates the target first. Several mirroir servers running the same binary can cause that.
 
-### Mitigations
+### Mitigations for Gestures
 
 | Strategy | How It Helps |
 |----------|-------------|
 | **Separate macOS Space** | Put iPhone Mirroring in its own Space. The activation triggers a Space switch, so your cursor position and text selection in the other Space are preserved. |
-| **Skill runner** | Chain multiple steps in a single skill (SKILL.md or YAML). Focus is acquired once at the start rather than stolen between each individual tool call. |
-| **Batch your MCP work** | Run a sequence of phone interactions together, then return to your other work. Interleaving phone commands with terminal typing will cause repeated focus switches. |
-| **`cursor_mode: preserving`** | Coordinate tools (`tap`, `swipe`, `drag`, `long_press`, `double_tap`) accept an optional `cursor_mode` argument. `preserving` restores the cursor to its original position after the operation. The default is `direct` for iPhone Mirroring and `preserving` for generic windows. This preserves cursor position, not application focus. |
+| **Skill runner** | Chain multiple steps in a single skill (SKILL.md or YAML). Focus is taken once, at the first gesture, rather than between individual tool calls. |
+| **Batch your MCP work** | Run a sequence of phone interactions together, then return to your other work. |
+| **`cursor_mode: preserving`** | Coordinate tools (`tap`, `swipe`, `drag`, `long_press`, `double_tap`) accept an optional `cursor_mode` argument. `preserving` restores the cursor to its original position after a HID gesture. The default is `direct` for iPhone Mirroring and `preserving` for generic windows. This preserves cursor position, not application focus. |
 
 ## Cross-Space Interaction
 
@@ -61,8 +67,9 @@ After an app is launched from Spotlight, iOS can reopen Spotlight still showing 
 `launch_app` (and a skill's `launch` step) therefore works like this:
 
 - It waits for Spotlight to appear, and opens it once more if a Home transition closed it.
-- When Spotlight already shows the app as a tile (its name with an app icon above it: the held query's top hit, or a Siri suggestion), it taps that label instead of typing, then confirms Spotlight closed.
-- Otherwise it types the name and presses Return only when the name appeared one more time than before; if it did not, it looks for the app's tile once more before failing without pressing Return.
+- When Spotlight holds a query and shows the app as a tile (its name with an app icon above it), it taps that tile instead of typing, then confirms Spotlight closed.
+- Otherwise it types the name. If the name never appears, it looks for the app's tile once more before failing without pressing Return.
+- It presses Return only when Spotlight's top result is an app: the "Top Hit" heading shows and either the search field reads "*name* — Open" or the result is a tile. An app that is not installed has no top hit, only web suggestions and App Store rows, so the call fails and says so instead of opening one of them.
 
 A held query for a *different* app still fails the launch. Recover by quitting and relaunching iPhone Mirroring.
 

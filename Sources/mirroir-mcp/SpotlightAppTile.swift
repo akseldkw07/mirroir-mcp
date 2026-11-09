@@ -8,14 +8,15 @@ import Foundation
 import HelperLib
 
 /// An app tile in Spotlight: the app's icon with its name label right below it, as
-/// in the top hit row and in Siri's suggested apps. When Spotlight reopens holding
-/// a previous search, the iPhone ignores typed keys (even the Mac's own keyboard)
-/// until iPhone Mirroring restarts, while taps still land. Tapping the tile's label
-/// opens the app without typing into that field. The label is what gets tapped:
-/// the icon detector places a tile's icon anywhere from its image to the card edge
+/// in the top hit row and in Siri's suggested apps. Typed keys can stop reaching
+/// the iPhone (even the Mac's own keyboard) until iPhone Mirroring restarts, while
+/// taps still land; Spotlight then often reopens holding the previous search.
+/// Tapping the tile opens the app without typing into that field. The tile is found by its label: the
+/// icon detector places a tile's icon anywhere from its image to the card edge
 /// above it, and sometimes misses it (an app icon drawn as a clock face reads as
 /// text); a label on the same baseline as a row of tiles is then a tile too, as
-/// the top hit is beside its app shortcuts. A row whose glyph sits beside its text
+/// the top hit is beside its app shortcuts. The tap itself goes into the icon,
+/// `iconTapLift` above the label (see `tapPoint(for:)`). A row whose glyph sits beside its text
 /// (a search-history "Q Clock", a web suggestion) is no tile, and its glyph marks
 /// no tile below it.
 enum SpotlightAppTile {
@@ -33,21 +34,85 @@ enum SpotlightAppTile {
     /// Widest gap, in points, from a row glyph to the text it sits beside.
     static let rowGlyphGap = 80.0
 
+    /// How far above its label's center a tile is tapped, in points. Spotlight
+    /// opens a tile from its icon only: a tap on the label does nothing, through
+    /// HID and through a window record alike (measured on an XR, iOS 26), while
+    /// taps 20pt and 43pt above the label opened the app. The label sits right
+    /// below an icon about 64pt tall, so this lands inside the icon.
+    static let iconTapLift = 30.0
+
+    /// How far below the top-hit heading its tile's label sits at most, in points
+    /// (112pt measured on an XR).
+    static let topHitReach = 150.0
+
     /// The label to tap for `name`, or nil when no tile shows it. With several
     /// tiles, the highest one (the top hit) wins.
     static func label(for name: String, in elements: [TapPoint]) -> TapPoint? {
         let target = normalize(name)
         guard !target.isEmpty else { return nil }
+        let labels = iconLabels(in: elements)
+        let tiles = elements
+            .filter { $0.text != CoreMLElementDetector.iconLabel && normalize($0.text) == target }
+            .filter { label in
+                labels.contains { $0 == label || onSameRow($0, label) }
+            }
+        return tiles.min { $0.tapY < $1.tapY }
+    }
+
+    /// The text elements with a tile's icon above them.
+    private static func iconLabels(in elements: [TapPoint]) -> [TapPoint] {
         let icons = elements.filter { $0.text == CoreMLElementDetector.iconLabel }
         let texts = elements.filter { $0.text != CoreMLElementDetector.iconLabel }
         let tileIcons = icons.filter { icon in !texts.contains { isBeside(icon, $0) } }
-        let iconLabels = texts.filter { label in tileIcons.contains { isAbove($0, label) } }
-        let tiles = texts
-            .filter { normalize($0.text) == target }
-            .filter { label in
-                iconLabels.contains { $0 == label || onSameRow($0, label) }
+        return texts.filter { label in tileIcons.contains { isAbove($0, label) } }
+    }
+
+    /// Where to tap the tile `label` names: inside its icon, above the label.
+    static func tapPoint(for label: TapPoint) -> (x: Double, y: Double) {
+        (label.tapX, label.tapY - iconTapLift)
+    }
+
+    /// The label of the tile that is Spotlight's top result: the first tile under
+    /// the top-hit heading, within `topHitReach`. Nil when the top result is not a
+    /// tile (a message or a web row has its image beside its text).
+    static func topHit(in elements: [TapPoint]) -> TapPoint? {
+        iconLabels(in: elements)
+            .filter { isInTopHitRow($0, in: elements) }
+            .min { $0.tapY < $1.tapY }
+    }
+
+    /// Whether `label` sits in the top-hit row, within `topHitReach` below its
+    /// heading. A section heading further down ("App Store", "Notes") can have a
+    /// result's icon above it and read as a tile, but it opens nothing.
+    static func isInTopHitRow(_ label: TapPoint, in elements: [TapPoint]) -> Bool {
+        guard let heading = elements.first(where: { element in
+            SpotlightDetector.topHitHeadings.contains {
+                element.text.lowercased().contains($0.lowercased())
             }
-        return tiles.min { $0.tapY < $1.tapY }
+        }) else { return false }
+        return (heading.tapY ... (heading.tapY + topHitReach)).contains(label.tapY)
+    }
+
+    /// Most letters OCR may misread in a first-row tile's label ("Relaj" for
+    /// "Reloj", Spanish iPhone, 2026-11-08) for it still to name the app.
+    static let firstRowLabelMisreads = 1
+
+    /// Whether the first result row under the search field is `name`'s tile, for
+    /// a Spotlight that shows no top-hit heading (Spanish iPhone, 2026-11-08: the
+    /// field at the top, then the top hit's tile beside its app shortcuts). The
+    /// field is the highest text starting with the query; the row is the next
+    /// baseline below it, and must hold several labels, the tile leftmost.
+    static func headsFirstRow(_ name: String, in elements: [TapPoint]) -> Bool {
+        let target = normalize(name)
+        guard !target.isEmpty,
+              let field = elements.filter({ normalize($0.text).hasPrefix(target) })
+                .min(by: { $0.tapY < $1.tapY }),
+              let first = elements.filter({ $0.tapY > field.tapY + rowTolerance })
+                .min(by: { $0.tapY < $1.tapY }) else { return false }
+        let row = elements.filter { onSameRow($0, first) }
+        guard row.count >= 2, let tile = row.min(by: { $0.tapX < $1.tapX }) else { return false }
+        return ScrollDeduplicator.levenshteinDistance(normalize(tile.text), target)
+            <= firstRowLabelMisreads
     }
 
     /// Whether two labels share a baseline: tiles of one row.

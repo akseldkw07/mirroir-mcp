@@ -35,6 +35,14 @@ final class SpotlightAppTileTests: XCTestCase {
         XCTAssertEqual(tile?.tapY, 219)
     }
 
+    /// A tap on the label does nothing on iOS 26; the icon above it opens the app.
+    func testTheTapGoesIntoTheIconAboveTheLabel() throws {
+        let tile = try XCTUnwrap(SpotlightAppTile.label(for: "Horloge", in: heldQuery))
+        let point = SpotlightAppTile.tapPoint(for: tile)
+        XCTAssertEqual(point.x, 80)
+        XCTAssertEqual(point.y, 219 - SpotlightAppTile.iconTapLift)
+    }
+
     func testATopHitWithAnUndetectedIconIsATileBesideItsShortcuts() {
         // 2026-11-01 13:35: the clock-face icon read as "11 12"; the shortcut
         // "Régler le" has its icon above it, and "Horloge" shares its baseline.
@@ -97,5 +105,14 @@ final class SpotlightAppTileTests: XCTestCase {
     func testTheHighestTileWinsWhenSeveralShowTheApp() {
         let twice = [el(icon, 262, 290), el("Horloge", 262, 322), el(icon, 80, 186), el("Horloge", 80, 219)]
         XCTAssertEqual(SpotlightAppTile.label(for: "Horloge", in: twice)?.tapY, 219)
+    }
+
+    /// Spanish iPhone, 2026-11-08 18:28: no top-hit heading; the field at the top
+    /// shows the query, and the first row is the tile (OCR misread "Relaj")
+    /// beside its app shortcuts.
+    func testATileBesideItsShortcutsHeadsTheFirstRow() {
+        let screen = [el("Reloj", 56, 80), el("Configurar", 120, 158), el("Relaj", 56, 159),
+                      el("Agregar", 184, 159), el("Cronómetro", 248, 159), el("Watch", 90, 269)]
+        XCTAssertTrue(SpotlightAppTile.headsFirstRow("Reloj", in: screen))
     }
 }

@@ -9,15 +9,32 @@ import CoreGraphics
 import Foundation
 
 /// Live `KeyEventPosting`: forwards to `CGEventInput`, which posts to the HID
-/// event tap where iPhone Mirroring reads keyboard events.
+/// event tap where iPhone Mirroring reads keyboard events, or to one process.
 struct CGEventKeyPoster: KeyEventPosting {
 
-    func postKey(keycode: UInt16, flags: CGEventFlags) -> Bool {
-        CGEventInput.postKey(keycode: keycode, flags: flags)
+    func postKey(keycode: UInt16, flags: CGEventFlags, targetPID: pid_t?) -> Bool {
+        CGEventInput.postKey(keycode: keycode, flags: flags, targetPID: targetPID)
     }
 
-    func postKeySequence(_ sequence: CGKeySequence) -> Bool {
-        CGEventInput.postKeySequence(sequence)
+    func postKeySequence(_ sequence: CGKeySequence, targetPID: pid_t?) -> Bool {
+        CGEventInput.postKeySequence(sequence, targetPID: targetPID)
+    }
+}
+
+/// Live `ClickPosting`: forwards to `CGEventInput`, which posts to the HID
+/// event tap at a screen point, or to one process.
+struct CGEventClickPoster: ClickPosting {
+
+    func click(at point: CGPoint, targetPID: pid_t?) -> Bool {
+        CGEventInput.click(at: point, targetPID: targetPID)
+    }
+
+    func doubleClick(at point: CGPoint, targetPID: pid_t?) -> Bool {
+        CGEventInput.doubleTap(at: point, targetPID: targetPID)
+    }
+
+    func longPress(at point: CGPoint, durationMs: Int, targetPID: pid_t?) -> Bool {
+        CGEventInput.longPress(at: point, durationMs: durationMs, targetPID: targetPID)
     }
 }
 

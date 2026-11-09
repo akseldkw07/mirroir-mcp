@@ -13,17 +13,12 @@ on:
     # The old 'feature/**' glob could not match the branch names actually used
     # here (feat/..., fix/...), so non-main pushes were effectively unbuilt.
     tags: ['v*']
-    paths:
-      - 'Package.swift'
-      - 'Sources/**'
-      - 'Tests/**'
-      - 'Resources/**'
-      - 'mirroir.sh'
-      - 'npm/**'
-      - 'scripts/package-fake-app.sh'
-      - '.github/actions/setup-embacle/**'
-      - '.github/actions/setup-fake-mirroring/**'
-      - '.github/workflows/installers.yml'
+    # No `paths` here: one paths filter applies to every ref the trigger
+    # covers. Release tags always run every installer, and main does unless a
+    # push changed only documentation. A
+    # feature-branch push runs them only when an installer input changed —
+    # the `changes` job below names those inputs; Sources/ and Tests/ on a
+    # branch are build.yml's to cover. workflow_dispatch forces a full run.
   pull_request:
     branches: [main]
     paths:
@@ -40,20 +35,51 @@ on:
   workflow_dispatch:
 
 # Cancel superseded runs on the same branch / PR — three macos-15 jobs run here,
-# so a superseded run is expensive to leave in flight.
+# so a superseded run is expensive to leave in flight. Never on main or a tag:
+# each of those commits keeps its own complete run.
 concurrency:
-  group: installers-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  # On main every commit keeps its own run: a third push must not replace a queued second one.
+  group: installers-${{ github.head_ref || github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # What the three installers exercise beyond the Swift sources: mirroir.sh
+  # and the agents/ profiles it copies, the npm wrapper, the manifest every
+  # install builds from, and the embacle/FakeMirroring setup they share. The
+  # Homebrew formula is written inline below, so this file covers it.
+  changes:
+    name: Installer inputs changed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Test the gate
+        run: bash scripts/ci/changed-paths-test.sh
+      - id: gate
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: >-
+          bash scripts/ci/changed-paths.sh
+          'mirroir.sh' 'agents/*' 'npm/*' 'Package.swift' 'Package.resolved'
+          'scripts/package-fake-app.sh' 'scripts/ci/changed-paths.sh' 'scripts/ci/changed-paths-test.sh'
+          '.github/actions/setup-embacle/*' '.github/actions/setup-fake-mirroring/*'
+          '.github/workflows/installers.yml'
+
   source-install:
     name: Source install (mirroir.sh)
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: macos-15
     permissions:
       contents: read
     env:
       MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-      MIRROIR_PROCESS_NAME: FakeMirroring
     steps:
       - uses: actions/checkout@v7
 
@@ -107,14 +133,34 @@ jobs:
           print(f'screenshot tool: OK ({len(images)} image block(s))')
           "
 
+      - name: Update knows this is a source install
+        run: |
+          .build/release/mirroir-mcp update --dry-run 2>&1 | tee update.txt
+          grep -q "Installed from the source checkout" update.txt
+
+      - name: Doctor reads the screen end to end (installed binary + FakeMirroring)
+        run: |
+          .build/release/mirroir-mcp doctor --json 2>doctor.json || true
+          python3 -c "
+          import json
+          raw = open('doctor.json').read()
+          report, _ = json.JSONDecoder().raw_decode(raw[raw.index('{'):])
+          checks = {c['name']: c for c in report['checks']}
+          read = checks.get('Screen read')
+          assert read, f'doctor ran no screen read: {checks}'
+          assert read['status'] == 'passed', f'screen read: {read}'
+          print('doctor screen read:', read['detail'])
+          "
+
   homebrew-install:
     name: Homebrew install (local formula)
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: macos-15
     permissions:
       contents: read
     env:
       MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-      MIRROIR_PROCESS_NAME: FakeMirroring
     steps:
       - uses: actions/checkout@v7
 
@@ -176,6 +222,11 @@ jobs:
           # Verify mirroir CLI works (symlink to mirroir-mcp)
           mirroir test --help 2>&1 | grep -q "mirroir-mcp test"
 
+      - name: Update knows this is a Homebrew install
+        run: |
+          mirroir-mcp update --dry-run 2>&1 | tee update.txt
+          grep -q "Would run: brew upgrade mirroir-mcp" update.txt
+
       - name: Verify embacle FFI linked
         run: nm "$(brew --prefix)/bin/mirroir-mcp" | grep -q embacle_init
 
@@ -215,12 +266,13 @@ jobs:
 
   npx-install:
     name: NPX install (npm package)
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     runs-on: macos-15
     permissions:
       contents: read
     env:
       MIRROIR_BUNDLE_ID: com.jfarcand.FakeMirroring
-      MIRROIR_PROCESS_NAME: FakeMirroring
     steps:
       - uses: actions/checkout@v7
 
@@ -256,8 +308,18 @@ jobs:
           import sys, json
           obj = json.loads(sys.stdin.readline())
           assert obj['result']['serverInfo']['name'] == 'mirroir-mcp'
+          assert 'describe_screen' in obj['result']['instructions'], 'initialize must carry the operating manual'
           print('MCP initialize (npx wrapper): OK')
           "
+
+      - name: Agent skill installs for Claude Code and Codex (clean HOME)
+        run: |
+          CLEAN_HOME=$(mktemp -d)
+          HOME="$CLEAN_HOME" node npm/bin/mirroir-mcp skill --install
+          for f in "$CLEAN_HOME/.claude/skills/mirroir/SKILL.md" "$CLEAN_HOME/.codex/skills/mirroir/SKILL.md"; do
+            head -2 "$f" | grep -qx 'name: mirroir' || { echo "missing or malformed: $f"; exit 1; }
+          done
+          echo "Agent skill installed: OK"
 
       - name: MCP tools/call screenshot (npx wrapper + FakeMirroring)
         run: |

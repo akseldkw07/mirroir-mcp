@@ -1,6 +1,6 @@
 # mirroir-mcp
 
-> Give your AI eyes, hands, and a real iPhone. An MCP server that lets any AI agent see the screen, tap what it needs, and figure the rest out — through macOS iPhone Mirroring. Also supports macOS windows. 40 tools, any MCP client (Claude Code, Cursor, Copilot, ChatGPT, Codex). Written in Swift. Apache 2.0 licensed.
+> Give your AI eyes, hands, and a real iPhone. An MCP server that lets any AI agent see the screen, tap what it needs, and figure the rest out — through macOS iPhone Mirroring. Also supports macOS windows. 41 tools, any MCP client (Claude Code, Cursor, Copilot, ChatGPT, Codex). Written in Swift. Apache 2.0 licensed.
 
 ## Overview
 
@@ -332,7 +332,7 @@ Multi-target configuration via `targets.json` for controlling multiple windows s
 
 ## Known Limitations
 
-- **Focus stealing**: Input tools must make iPhone Mirroring frontmost. No API exists to direct CGEvent input to background windows. Mitigate with a separate macOS Space.
+- **Focus stealing**: On iPhone Mirroring, taps, keystrokes and swipes are sent to its window and leave the front app alone. Drags and two-finger gestures use HID input: they bring iPhone Mirroring forward for their duration, then return the front and the pointer.
 - **Clipboard paste**: iPhone Mirroring does not bridge Mac clipboard when paste is triggered programmatically. No workaround exists.
 - **Keyboard layout edge cases**: Two characters on the ISO section key cannot be typed due to macOS/iOS key mapping disagreement.
 - **iOS autocorrect**: Applied to typed text. Disable in iPhone Settings if problematic.
@@ -344,7 +344,8 @@ Multi-target configuration via `targets.json` for controlling multiple windows s
 ## Documentation Index
 
 - [README](README.md) — Installation, examples, quick start
-- [Tools Reference](docs/tools.md) — All 40 tools with parameters
+- [Onboarding](docs/onboarding.md) — Setup written for the agent: prerequisites, install, doctor, read-only proof
+- [Tools Reference](docs/tools.md) — All 41 tools with parameters
 - [Security](docs/security.md) — Threat model, kill switch, recommendations
 - [Permissions](docs/permissions.md) — Fail-closed permission model
 - [Component Detection](docs/components.md) — Component definitions, calibration, detection pipeline

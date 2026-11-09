@@ -95,6 +95,17 @@ final class CoverGuardTests: XCTestCase {
         XCTAssertEqual(owner.asked, points)
     }
 
+    func testSwipeCoveredOnlyAtItsEndIsRefused() throws {
+        // The HID swipe path lands wherever the pointer is, so a path covered
+        // past its start must be refused like a covered tap. The stub bridge's
+        // window (pid 1) sits at the screen origin.
+        owner.fallback = PointOwner(pid: 1, name: "iPhone Mirroring")
+        owner.owners = [(CGPoint(x: 10, y: 10), PointOwner(pid: 7, name: "Finder"))]
+        let error = try XCTUnwrap(input.swipe(fromX: 10, fromY: 12, toX: 10, toY: 10))
+        XCTAssertTrue(error.contains("Finder"), error)
+        XCTAssertTrue(error.contains("nothing was sent"), error)
+    }
+
     func testSwipeChecksStartMidpointAndEnd() {
         // Scroll events go to the window under the cursor at the midpoint;
         // a swipe's start and end are checked too.

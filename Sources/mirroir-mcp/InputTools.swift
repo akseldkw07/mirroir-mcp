@@ -45,10 +45,12 @@ extension MirroirMCP {
         server.registerTool(MCPToolDefinition(
             name: "tap",
             description: """
-                Tap at a specific position on the mirrored iPhone screen. \
-                Coordinates are relative to the iPhone Mirroring window \
-                (0,0 is top-left of the mirrored content). \
-                Use screenshot first to identify element positions.
+                Tap on the mirrored iPhone screen, either on visible text or at a \
+                position. With `text`, the text is found by OCR and tapped; when \
+                it is not on screen, the reply lists the text that is. With `x` \
+                and `y`, the point is relative to the iPhone Mirroring window \
+                (0,0 is the top-left of the mirrored content); take coordinates \
+                from describe_screen, which reports each element's tap point.
                 """,
             inputSchema: [
                 "type": .string("object"),
@@ -63,17 +65,27 @@ extension MirroirMCP {
                         "description": .string(
                             "Y coordinate relative to the mirroring window (0 = top edge)"),
                     ]),
+                    "text": .object([
+                        "type": .string("string"),
+                        "description": .string(
+                            "Visible text to tap, matched by OCR (exact, then case- and "
+                            + "accent-insensitive, then substring). Use instead of x and y."),
+                    ]),
                     "cursor_mode": cursorModeSchema,
                 ]),
-                "required": .array([.string("x"), .string("y")]),
             ],
             handler: { args in
                 let (ctx, err) = registry.resolveForTool(args)
                 guard let ctx else { return err! }
                 let input = ctx.input
 
+                if let text = args["text"]?.asString() {
+                    let executor = InlineStepRunner.executor(for: ctx, registry: registry)
+                    let report = InlineStepRunner.run([.tap(label: text)], executor: executor)
+                    return report.failed ? .error(report.text) : .text(report.text)
+                }
                 guard let x = args["x"]?.asNumber(), let y = args["y"]?.asNumber() else {
-                    return .error("Missing required parameters: x, y (numbers)")
+                    return .error("Missing parameters: give text (string), or x and y (numbers)")
                 }
 
                 let cursorMode: CursorMode?
@@ -97,9 +109,11 @@ extension MirroirMCP {
                 Coordinates are relative to the iPhone Mirroring window. \
                 Content follows the finger: swipe up (scroll down), swipe down \
                 (scroll up), swipe left to reveal content on the right. \
-                Fast swipes (short duration_ms) end with flick momentum, so \
-                paging surfaces like video feeds snap to the next page; use a \
-                long duration_ms for a slow precise scroll without inertia. \
+                Paging surfaces like video feeds snap to the next page only on a \
+                real flick, 2000 points per second or faster: for example 75% of \
+                the screen height in 150 ms. The default 300 ms over a third of the \
+                screen scrolls a list a bounded distance and does not page a feed. \
+                Use a long duration_ms for a slow scroll without inertia. \
                 The result says whether the screen moved (diff_ratio below the \
                 status bar); a swipe that moved nothing is retried once.
                 """,
@@ -156,8 +170,7 @@ extension MirroirMCP {
                 case .invalid(let msg): return .error(msg)
                 }
 
-                // Compare captures before and after, so a dropped gesture or the
-                // end of a list reads as "did not change" rather than a bare "Swiped".
+                // Compare captures so a dropped gesture or a list's end reads as "did not change", not "Swiped".
                 let outcome = SwipeVerifier.run(
                     capture: ctx.capture, distance: max(abs(toX - fromX), abs(toY - fromY))
                 ) {
@@ -251,8 +264,9 @@ extension MirroirMCP {
         server.registerTool(MCPToolDefinition(
             name: "type_text",
             description: """
-                Type text on the mirrored iPhone. Automatically activates the \
-                iPhone Mirroring window if needed (one-time Space switch). \
+                Type text on the mirrored iPhone. The target is brought to the front \
+                for the keys (iPhone Mirroring forwards keys only while active), then \
+                the previous front app gets the front back. \
                 A text field must be active on the iPhone. \
                 Sends keystrokes through the CGEvent keyboard interface \
                 with automatic keyboard layout translation for non-US layouts. \
@@ -263,7 +277,10 @@ extension MirroirMCP {
                 what was not confirmed. Emoji and pictographic symbols cannot \
                 be read back by OCR, so text containing them always returns an \
                 error even when the paste landed — check the screen. Non-Latin \
-                scripts are confirmed only when ocrLanguages includes them.
+                scripts are confirmed only when ocrLanguages includes them. \
+                Typed text is read back from the screen: when iOS autocorrect \
+                rewrote it, the call still succeeds and the result says the \
+                screen does not show what was typed.
                 """,
             inputSchema: [
                 "type": .string("object"),
@@ -288,7 +305,8 @@ extension MirroirMCP {
                 guard result.success else {
                     return .error(result.error ?? "Failed to type text")
                 }
-                return .text("Typed \(text.count) characters")
+                let typed = "Typed \(text.count) characters"
+                return .text(result.notice.map { "\(typed)\n\n\($0)" } ?? typed)
             }
         ))
 
@@ -297,7 +315,8 @@ extension MirroirMCP {
             name: "press_key",
             description: """
                 Send a key press to the mirrored iPhone with optional modifiers. \
-                Automatically activates the iPhone Mirroring window if needed (one-time Space switch). \
+                The target is brought to the front for the key, then the previous \
+                front app gets the front back. \
                 Supported keys: return, escape, tab, delete, space, up, down, left, right, \
                 or any single character (a-z, 0-9, etc.) for shortcuts. \
                 Optional modifiers: command, shift, option, control. \

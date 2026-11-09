@@ -1,13 +1,16 @@
 {
   "name": "mirroir",
   "displayName": "mirroir",
-  "version": "0.42.0",
+  "version": "0.45.0",
   "description": "Drive a real iPhone through macOS iPhone Mirroring: describe_screen (OCR), tap, swipe, type, launch apps, and author replayable skills. Requires macOS 15+ on Apple Silicon with iPhone Mirroring paired.",
   "author": {
     "name": "Jean-Francois Arcand",
     "url": "https://github.com/jfarcand"
   },
-  "homepage": "https://github.com/jfarcand/mirroir-mcp",
+  "homepage": "https://mirroir.dev",
+  "documentationUrl": "https://github.com/jfarcand/mirroir-mcp#readme",
+  "supportUrl": "https://github.com/jfarcand/mirroir-mcp/issues",
+  "privacyPolicyUrl": "https://github.com/jfarcand/mirroir-mcp/blob/main/docs/privacy.md",
   "repository": "https://github.com/jfarcand/mirroir-mcp",
   "license": "Apache-2.0",
   "keywords": [
@@ -23,7 +26,7 @@
       "command": "npx",
       "args": [
         "-y",
-        "mirroir-mcp"
+        "mirroir-mcp@0.45.0"
       ]
     }
   }

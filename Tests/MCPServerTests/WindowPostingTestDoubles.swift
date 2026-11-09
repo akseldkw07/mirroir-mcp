@@ -1,0 +1,70 @@
+// Copyright 2026 jfarcand@apache.org
+// Licensed under the Apache License, Version 2.0
+//
+// ABOUTME: Test doubles that record the window events and key presses InputSimulation asks for.
+// ABOUTME: Shared by the window-delivery and Spotlight launch tests; nothing reaches the window server.
+
+import CoreGraphics
+import XCTest
+@testable import mirroir_mcp
+
+/// Records the window events InputSimulation asks for. A test double: the
+/// live poster talks to the window server, which a unit test must not touch.
+final class RecordingWindowPoster: WindowEventPosting, @unchecked Sendable {
+    private(set) var keyFocusWindows: [CGWindowID] = []
+    private(set) var stampedPoints: [CGPoint] = []
+    var canStampEvents = true
+
+    func focusKeys(in window: WindowInfo) -> Bool {
+        keyFocusWindows.append(window.windowID)
+        return true
+    }
+
+    func stamp(_ event: CGEvent, at point: CGPoint, in window: WindowInfo) {
+        stampedPoints.append(point)
+    }
+}
+
+/// Records each key press and the process it was addressed to; nothing is posted.
+final class RecordingKeyPoster: KeyEventPosting, @unchecked Sendable {
+    private(set) var targets: [pid_t?] = []
+    /// The single keys pressed, in order; typed text goes through key sequences.
+    private(set) var keycodes: [UInt16] = []
+
+    func postKey(keycode: UInt16, flags: CGEventFlags, targetPID: pid_t?) -> Bool {
+        targets.append(targetPID)
+        keycodes.append(keycode)
+        return true
+    }
+
+    func postKeySequence(_ sequence: CGKeySequence, targetPID: pid_t?) -> Bool {
+        targets.append(targetPID)
+        return true
+    }
+}
+
+/// Records each click and the screen point it was posted at; nothing is posted.
+final class RecordingClickPoster: ClickPosting, @unchecked Sendable {
+    struct Click: Equatable {
+        let point: CGPoint
+        let count: Int
+        let holdMs: Int?
+    }
+
+    private(set) var clicks: [Click] = []
+
+    func click(at point: CGPoint, targetPID: pid_t?) -> Bool {
+        clicks.append(Click(point: point, count: 1, holdMs: nil))
+        return true
+    }
+
+    func doubleClick(at point: CGPoint, targetPID: pid_t?) -> Bool {
+        clicks.append(Click(point: point, count: 2, holdMs: nil))
+        return true
+    }
+
+    func longPress(at point: CGPoint, durationMs: Int, targetPID: pid_t?) -> Bool {
+        clicks.append(Click(point: point, count: 1, holdMs: durationMs))
+        return true
+    }
+}

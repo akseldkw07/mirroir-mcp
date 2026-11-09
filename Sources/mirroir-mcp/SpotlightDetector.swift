@@ -18,11 +18,58 @@ enum SpotlightDetector {
     /// Delay between poll attempts in milliseconds.
     static let retryDelayMs: UInt32 = 500
 
+    /// The heading above Spotlight's top result. A query with no installed app,
+    /// file or message behind it has none (measured on an XR, iOS 26: "Keynote",
+    /// not installed, lists a web suggestion and an App Store row under
+    /// "Suggestions").
+    static let topHitHeadings: [String] = ["Top Hit", "Meilleur résultat", "Mejor resultado"]
+
+    /// What the search field adds after the query when Return opens an app
+    /// ("Notes — Ouvrir"); on any other top result it adds that result's title.
+    static let openWords: [String] = ["Open", "Ouvrir", "Abrir", "Öffnen"]
+
+    /// Whether Spotlight holds a query: its top-hit heading shows. The idle page
+    /// (Siri suggestions) holds none, and typing reaches it.
+    static func holdsQuery(elements: [TapPoint]) -> Bool {
+        elements.contains { el in
+            topHitHeadings.contains { el.text.lowercased().contains($0.lowercased()) }
+        }
+    }
+
+    /// Whether Return would open an app, not a web suggestion, an App Store page
+    /// or a message: Spotlight has a top result, and either the search field says
+    /// it opens it, or the result is a tile. Spotlight does not always show the
+    /// heading (Spanish iPhone, 2026-11-08: field at the top, the top result's
+    /// tile and shortcuts, no heading), so a field that says it opens `name`
+    /// counts on its own. Looks at the screen before Return because nothing
+    /// afterwards names the app in front.
+    static func returnOpensApp(elements: [TapPoint], name: String) -> Bool {
+        guard holdsQuery(elements: elements) else {
+            return elements.contains { fieldOpens($0, name: name) }
+                || SpotlightAppTile.headsFirstRow(name, in: elements)
+        }
+        return elements.contains { fieldOpens($0, name: nil) }
+            || SpotlightAppTile.topHit(in: elements) != nil
+    }
+
+    /// Whether `element` reads as the field's completion: the query, a dash, then
+    /// the word for open ("Q Horloge - Ouvrir"). With `name`, the text before the
+    /// dash must end with it (OCR may read the magnifier glyph in front of it).
+    private static func fieldOpens(_ element: TapPoint, name: String?) -> Bool {
+        let parts = element.text.split(whereSeparator: { "-–—".contains($0) })
+        guard parts.count >= 2, let first = parts.first, let last = parts.last else { return false }
+        let word = last.trimmingCharacters(in: .whitespaces).lowercased()
+        guard openWords.contains(where: { $0.lowercased() == word }) else { return false }
+        guard let name else { return true }
+        let wanted = normalize(name)
+        return !wanted.isEmpty && normalize(String(first)).hasSuffix(wanted)
+    }
+
     /// Text patterns that indicate Spotlight search overlay is still visible.
     /// Covers English, French, Spanish, and German locales.
-    static let indicators: [String] = [
-        "Top Hit", "Meilleur résultat",
+    static let indicators: [String] = topHitHeadings + [
         "Search in App", "Rechercher dans l'app",
+        "Rechercher dans les apps",
         "Siri Suggestions", "Suggestions de Siri",
         "Siri-Vorschläge", "Sugerencias de Siri",
     ]

@@ -24,7 +24,7 @@ import Foundation
 enum CGEventInput {
 
     /// Milliseconds to pause between mouse-down and mouse-up for a click.
-    private static let clickHoldUs: UInt32 = 50_000
+    static let clickHoldUs: UInt32 = 50_000
 
     /// Microseconds to settle after warping cursor before posting scroll events.
     /// Only used by swipe, which needs the cursor pre-positioned for scroll routing.
@@ -121,10 +121,17 @@ enum CGEventInput {
 
     /// Swipe (scroll wheel) from one screen-absolute point to another.
     /// Uses scroll wheel events since iPhone Mirroring interprets scroll
-    /// wheel as swipe gestures (page scrolling, list scrolling).
+    /// wheel as swipe gestures (page scrolling, list scrolling). With `stamp`
+    /// and a `targetPID`, every event is addressed to the window, so neither the
+    /// pointer nor the front app is involved.
     static func swipe(from start: CGPoint, to end: CGPoint, durationMs: Int,
-                      targetPID: pid_t? = nil) -> Bool {
+                      targetPID: pid_t? = nil,
+                      stamp: ((CGEvent) -> Void)? = nil) -> Bool {
         let durationMs = safeDurationMs(durationMs)
+        let send = { (event: CGEvent) in
+            stamp?(event)
+            post(event, targetPID: targetPID)
+        }
         let deltaX = end.x - start.x
         let deltaY = end.y - start.y
 
@@ -139,7 +146,7 @@ enum CGEventInput {
         // may not register with the window's event tracking. The mouseMoved
         // event forces macOS to associate the cursor with this window.
         if let move = makeMouseEvent(.mouseMoved, at: midpoint) {
-            post(move, targetPID: targetPID)
+            send(move)
             usleep(50_000) // 50ms for window to register cursor presence
         }
 
@@ -154,11 +161,15 @@ enum CGEventInput {
         let momentumPhaseField = CGEventField(rawValue: 123)!  // kCGScrollWheelEventMomentumPhase
 
         let phaseMayBegin: Int64 = 128
+        let plan = SwipeGestureProfile.plan(
+            deltaX: deltaX, deltaY: deltaY, durationMs: durationMs
+        )
+        let sender = plan.isTrackpadFlick ? TrackpadSender.current() : nil
 
-        if let prime = makeScrollEvent(SwipeWheelStep(wheel1: 0, wheel2: 0), at: midpoint) {
+        if let prime = makeScrollEvent(SwipeWheelStep(wheel1: 0, wheel2: 0), at: midpoint, sender: sender) {
             prime.setIntegerValueField(scrollPhaseField, value: phaseMayBegin)
             prime.setIntegerValueField(momentumPhaseField, value: 0)
-            post(prime, targetPID: targetPID)
+            send(prime)
             usleep(warpSettleUs)
         }
 
@@ -171,10 +182,9 @@ enum CGEventInput {
         // so each wheel delta carries the same sign as its pixel delta.
         // SwipeGestureProfile splits the amplified distance into a drag phase
         // and, for fast flicks, a decaying momentum tail.
-        let plan = SwipeGestureProfile.plan(
-            deltaX: deltaX, deltaY: deltaY, durationMs: durationMs
-        )
         let stepDelay = UInt32(durationMs) * 1000 / UInt32(plan.drag.count)
+        let dragVelocities = plan.dragVelocities
+        let momentumVelocities = plan.momentumVelocities
 
         // Trackpad-style continuous scroll requires gesture phase flags and
         // precise point-delta fields. iPhone Mirroring ignores bare scroll
@@ -191,11 +201,12 @@ enum CGEventInput {
 
         // Drag phase: the finger is in contact and moving.
         for (index, step) in plan.drag.enumerated() {
-            guard let scroll = makeScrollEvent(step, at: midpoint) else { continue }
+            guard let scroll = makeScrollEvent(step, at: midpoint, velocity: dragVelocities[index],
+                                               sender: sender) else { continue }
             let phase = index == 0 ? phaseBegan : phaseChanged
             scroll.setIntegerValueField(scrollPhaseField, value: phase)
             scroll.setIntegerValueField(momentumPhaseField, value: phaseNone)
-            post(scroll, targetPID: targetPID)
+            send(scroll)
             usleep(stepDelay)
         }
 
@@ -203,10 +214,10 @@ enum CGEventInput {
         // trackpad trace. Ending the gesture while deltas are still flowing
         // reads as a stalled drag to iOS paging surfaces, which then settle
         // between pages instead of advancing.
-        if let lift = makeScrollEvent(SwipeWheelStep(wheel1: 0, wheel2: 0), at: midpoint) {
+        if let lift = makeScrollEvent(SwipeWheelStep(wheel1: 0, wheel2: 0), at: midpoint, sender: sender) {
             lift.setIntegerValueField(scrollPhaseField, value: phaseEnded)
             lift.setIntegerValueField(momentumPhaseField, value: phaseNone)
-            post(lift, targetPID: targetPID)
+            send(lift)
             usleep(momentumFrameUs)
         }
 
@@ -216,11 +227,12 @@ enum CGEventInput {
         // trackpad emits no momentum events at all for a slow drag-scroll,
         // so non-flick swipes close with the finger lift alone.
         for (index, step) in plan.momentum.enumerated() {
-            guard let scroll = makeScrollEvent(step, at: midpoint) else { continue }
-            scroll.setIntegerValueField(scrollPhaseField, value: phaseNone)
             let momentumPhase = index == 0 ? momentumBegin : momentumContinue
+            guard let scroll = makeScrollEvent(step, at: midpoint, velocity: momentumVelocities[index],
+                                               momentumPhase: momentumPhase, sender: sender) else { continue }
+            scroll.setIntegerValueField(scrollPhaseField, value: phaseNone)
             scroll.setIntegerValueField(momentumPhaseField, value: momentumPhase)
-            post(scroll, targetPID: targetPID)
+            send(scroll)
             usleep(momentumFrameUs)
         }
 
@@ -229,10 +241,11 @@ enum CGEventInput {
         // waits for further momentum events and ignores the next gesture's
         // phaseBegan, causing stuck scrolls.
         if !plan.momentum.isEmpty,
-           let close = makeScrollEvent(SwipeWheelStep(wheel1: 0, wheel2: 0), at: midpoint) {
+           let close = makeScrollEvent(SwipeWheelStep(wheel1: 0, wheel2: 0), at: midpoint,
+                                       momentumPhase: momentumEnd, sender: sender) {
             close.setIntegerValueField(scrollPhaseField, value: phaseNone)
             close.setIntegerValueField(momentumPhaseField, value: momentumEnd)
-            post(close, targetPID: targetPID)
+            send(close)
             usleep(stepDelay)
         }
 
@@ -242,7 +255,8 @@ enum CGEventInput {
     /// Create a continuous scroll wheel event carrying one gesture frame.
     /// Phase fields are left for the caller to set.
     private static func makeScrollEvent(
-        _ step: SwipeWheelStep, at location: CGPoint
+        _ step: SwipeWheelStep, at location: CGPoint, velocity: TrackpadVelocity = .zero,
+        momentumPhase: Int64 = 0, sender: TrackpadSender?
     ) -> CGEvent? {
         guard let scroll = CGEvent(
             scrollWheelEvent2Source: nil,
@@ -260,6 +274,10 @@ enum CGEventInput {
         scroll.setIntegerValueField(isContinuousField, value: 1)
         scroll.setIntegerValueField(pointDeltaY, value: Int64(step.wheel1))
         scroll.setIntegerValueField(pointDeltaX, value: Int64(step.wheel2))
+        if let sender {
+            TrackpadScrollFields.apply(to: scroll, step: step, velocity: velocity,
+                                       momentumPhase: momentumPhase, senderID: sender.registryID)
+        }
         return scroll
     }
 
@@ -314,7 +332,9 @@ enum CGEventInput {
     /// rather than reading flags from key events. This method sends
     /// flagsChanged press/release events for each required modifier around
     /// the actual keystroke, matching how a physical keyboard works.
-    static func postKey(keycode: UInt16, flags: CGEventFlags = CGEventFlags()) -> Bool {
+    /// `targetPID` posts every event to that process instead of the HID tap.
+    static func postKey(keycode: UInt16, flags: CGEventFlags = CGEventFlags(),
+                        targetPID: pid_t? = nil) -> Bool {
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: keycode, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: keycode, keyDown: false) else {
             return false
@@ -324,26 +344,26 @@ enum CGEventInput {
 
         // Press modifier keys explicitly so iPhone Mirroring sees the state change
         if hasModifiers {
-            pressModifiers(flags)
+            pressModifiers(flags, targetPID: targetPID)
         }
 
         down.flags = flags
         up.flags = flags
-        down.post(tap: .cghidEventTap)
+        post(down, targetPID: targetPID)
         usleep(keystrokeDelayUs)
-        up.post(tap: .cghidEventTap)
+        post(up, targetPID: targetPID)
 
         // Release modifiers after the keystroke
         if hasModifiers {
             usleep(keystrokeDelayUs)
-            releaseModifiers(flags)
+            releaseModifiers(flags, targetPID: targetPID)
         }
 
         return true
     }
 
     /// Post flagsChanged events to press the specified modifier keys.
-    private static func pressModifiers(_ flags: CGEventFlags) {
+    private static func pressModifiers(_ flags: CGEventFlags, targetPID: pid_t?) {
         var accumulated = CGEventFlags()
         for (flag, keycode) in modifierKeys {
             if flags.contains(flag) {
@@ -353,14 +373,14 @@ enum CGEventInput {
                 }
                 event.type = .flagsChanged
                 event.flags = accumulated
-                event.post(tap: .cghidEventTap)
+                post(event, targetPID: targetPID)
                 usleep(keystrokeDelayUs)
             }
         }
     }
 
     /// Post flagsChanged events to release the specified modifier keys (reverse order).
-    private static func releaseModifiers(_ flags: CGEventFlags) {
+    private static func releaseModifiers(_ flags: CGEventFlags, targetPID: pid_t?) {
         var remaining = flags.intersection(allModifierFlags)
         for (flag, keycode) in modifierKeys.reversed() {
             if remaining.contains(flag) {
@@ -370,7 +390,7 @@ enum CGEventInput {
                 }
                 event.type = .flagsChanged
                 event.flags = remaining
-                event.post(tap: .cghidEventTap)
+                post(event, targetPID: targetPID)
                 usleep(keystrokeDelayUs)
             }
         }
@@ -378,9 +398,9 @@ enum CGEventInput {
 
     /// Post a dead-key sequence (2+ key events with a longer delay between them).
     /// Used for accented characters like é (Option+e, then e).
-    static func postKeySequence(_ sequence: CGKeySequence) -> Bool {
+    static func postKeySequence(_ sequence: CGKeySequence, targetPID: pid_t? = nil) -> Bool {
         for (index, step) in sequence.steps.enumerated() {
-            guard postKey(keycode: step.keycode, flags: step.flags) else {
+            guard postKey(keycode: step.keycode, flags: step.flags, targetPID: targetPID) else {
                 return false
             }
             // Use longer delay after the dead-key trigger (first step),
@@ -393,10 +413,10 @@ enum CGEventInput {
     }
 
     /// Trigger a shake gesture by posting Ctrl+Cmd+Z via CGEvent.
-    static func shake() -> Bool {
+    static func shake(targetPID: pid_t? = nil) -> Bool {
         let flags: CGEventFlags = [.maskControl, .maskCommand]
         // Z key = kVK_ANSI_Z = 0x06
-        return postKey(keycode: 0x06, flags: flags)
+        return postKey(keycode: 0x06, flags: flags, targetPID: targetPID)
     }
 
     // MARK: - Private
