@@ -1,0 +1,43 @@
+# Checks the workflows themselves: a branch push and its pull request share one
+# concurrency group, and every macOS job a push or pull request starts can be
+# routed to the self-hosted VM runner (docs/vm-runner.md).
+name: Workflow checks
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/ci/concurrency-groups-test.sh'
+      - 'scripts/ci/vm-runner-routing-test.sh'
+      - 'scripts/ci/vm-runner/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/ci/concurrency-groups-test.sh'
+      - 'scripts/ci/vm-runner-routing-test.sh'
+      - 'scripts/ci/vm-runner/**'
+
+concurrency:
+  # On main every commit keeps its own run: a third push must not replace a queued second one.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-checks:
+    name: Workflow checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: A branch push and its pull request share one concurrency group
+        run: bash scripts/ci/concurrency-groups-test.sh
+
+      - name: macOS jobs can run on the VM runner
+        run: bash scripts/ci/vm-runner-routing-test.sh
+
+      - name: The VM runner's host loop
+        run: bash scripts/ci/vm-runner/test.sh
