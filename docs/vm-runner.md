@@ -11,13 +11,16 @@ touch the host's screen, mouse or keyboard.
 
 | Piece | Where it runs | What it does |
 |---|---|---|
-| `scripts/ci/vm-runner/host-loop.sh` | the Mac, under launchd | Clones a fresh VM from the `mirroir-ci` image, registers a one-job (JIT) runner with GitHub, shares its config with the VM, and deletes the VM and the runner once the VM shuts down |
+| `scripts/ci/vm-runner/host-loop.sh` | the Mac, under launchd | Asks GitHub every 20 seconds whether a job waits for the runner's label; only then clones a fresh VM from the `mirroir-ci` image, registers a one-job (JIT) runner with GitHub, shares its config with the VM, and deletes the VM and the runner once the VM shuts down |
 | `scripts/ci/vm-runner/guest-agent.sh` | inside the VM, at login | Waits for the JIT config, runs exactly one job in the VM's desktop session, then shuts the VM down |
 | `scripts/ci/vm-runner/build-image.sh` | the Mac, once | Pulls the Xcode base image and installs the pinned runner and the guest agent into `mirroir-ci` (through `install-guest.sh`) |
 | `scripts/ci/vm-runner/install-host-agent.sh` | the Mac, once | Installs one launchd agent per slot that keeps `host-loop.sh` running |
 
 Every job starts from the same clean image and its VM is deleted afterwards, so nothing a
 job installs or leaves behind reaches the next job or the host.
+
+The runner is on demand: while no job waits, no VM runs and none of its cores (6) or
+memory (12 GB) are taken. A job waits about 30 seconds longer to start while its VM boots.
 
 ## Routing jobs to it
 
@@ -73,13 +76,32 @@ scripts/ci/vm-runner/install-host-agent.sh --uninstall
 Jobs routed to the VM runner wait for it, so delete the variable before the Mac goes away
 for long (travel, a closed lid): otherwise they queue until GitHub gives up after 24 hours.
 
-## Still to verify on the first image
+## Inside the image
 
-- **`tart exec`.** `build-image.sh` reaches the VM through `tart exec`, which needs the Tart
-  guest agent in the base image.
-- **Permissions for the integration tests.** GitHub's runner image grants Accessibility and
-  Screen Recording ahead of time; the FakeMirroring lanes in `build.yml` need both. Grant
-  them in the image once, then rebuild clones from it.
+What the FakeMirroring lanes need that GitHub's runner image sets up ahead of time, and
+how `install-guest.sh` provides it (all measured on the first image, 2026-11-09):
+
+| Need | Without it | How the image provides it |
+|---|---|---|
+| A desktop session | Windows and captures fail over SSH | The runner starts from a login agent in the VM's own session |
+| Homebrew on `PATH` | `brew: command not found` in `setup-embacle` | The guest agent loads `path_helper` and `brew shellenv` |
+| TCC grants (Accessibility, event posting, Input Monitoring, Screen Recording, AppleEvents) | Consent dialogs no one can answer, and the job's typing lands in them | Copied to `Runner.Listener`, which macOS holds responsible for every job process |
+| Screen capture without the window picker | Sequoia's "requesting to bypass the system private window picker" dialog takes focus | Pre-approved, with no expiry, for `bash`, `Runner.Listener`, `mirroir-mcp` and `xctest` |
+
+The base image has SIP disabled, which writing the system TCC database requires.
+
+A dialog in the VM is the usual cause of a FakeMirroring lane that fails with keystrokes
+"not reaching" the target. To see it, screenshot the job's VM while the step runs:
+
+```bash
+tart exec <vm> screencapture -x /tmp/s.png
+```
+
+That capture goes through `tart-guest-agent`, which raises its own picker dialog the first
+time and can fail the step it watches, so read the result with that in mind.
+
+## Still to verify
+
 - **The installer jobs** (`installers.yml`, `install.yml`) on a VM where the setup actions
   install every tool themselves.
 

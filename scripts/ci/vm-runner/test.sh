@@ -27,6 +27,11 @@ cat > "$WORK/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 echo "gh $*" >> "$STUB_LOG"
 [[ "$*" == *generate-jitconfig* ]] && echo '{"runner":{"id":4321},"encoded_jit_config":"JIT-TOKEN"}'
+# Runs with a job waiting for the label: run 777 holds STUB_WAITING_JOBS of them.
+[[ "$*" == *"actions/runs?status="* ]] && echo 777
+[[ "$*" == *"actions/runs/777/jobs"* ]] && echo "${STUB_WAITING_JOBS:-1}"
+# GitHub removes a one-job runner after its job, so deleting it again is a 404.
+[[ "$*" == *"-X DELETE"* ]] && exit 1
 exit 0
 EOF
 chmod 755 "$WORK/bin/tart" "$WORK/bin/gh"
@@ -34,9 +39,29 @@ chmod 755 "$WORK/bin/tart" "$WORK/bin/gh"
 export PATH="$WORK/bin:$PATH"
 export VM_RUNNER_REPO=owner/repo VM_RUNNER_IMAGE=base-image VM_RUNNER_LABEL=test-label
 export STUB_LOG="$WORK/calls.log" STUB_SEEN_JIT="$WORK/seen-jit"
+export VM_RUNNER_IDLE_POLL_SECS=1
+
+# With no job waiting, the loop keeps polling GitHub and starts no VM.
+: > "$STUB_LOG"
+STUB_WAITING_JOBS=0 bash "$HERE/host-loop.sh" --once > "$WORK/out.log" 2>&1 &
+idle_pid=$!
+sleep 3
+kill "$idle_pid" 2>/dev/null || true
+wait "$idle_pid" 2>/dev/null || true
+if ! grep -q '^tart clone' "$STUB_LOG" && grep -q 'actions/runs?status=' "$STUB_LOG"; then
+    echo "ok   no VM boots while no job is waiting"
+else
+    echo "FAIL no VM boots while no job is waiting"; cat "$STUB_LOG" "$WORK/out.log"; exit 1
+fi
 
 : > "$STUB_LOG"
-bash "$HERE/host-loop.sh" --once > "$WORK/out.log" 2>&1 || true
+if bash "$HERE/host-loop.sh" --once > "$WORK/out.log" 2>&1; then status=0; else status=$?; fi
+if (( status == 0 )); then
+    echo "ok   a clean job exits 0, though its runner is already gone"
+else
+    echo "FAIL a clean job exits 0, though its runner is already gone (exit $status)"
+    cat "$STUB_LOG" "$WORK/out.log"; exit 1
+fi
 if grep -q '^tart clone base-image mirroir-vm-' "$STUB_LOG"; then
     echo "ok   the VM is cloned from the image"
 else

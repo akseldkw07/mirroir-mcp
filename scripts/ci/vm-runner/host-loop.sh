@@ -8,7 +8,8 @@ usage() {
     cat <<'EOF'
 Usage: host-loop.sh [--once] [--slot N]
 
-Keeps one ephemeral VM runner waiting for a job, forever (or once with --once).
+Waits until GitHub has a job queued for the runner's label, then serves it in a
+fresh VM, forever (or once with --once). No VM runs while nothing is queued.
 Run one loop per slot; Apple's license allows two macOS VMs per Mac.
 
 Environment:
@@ -17,6 +18,7 @@ Environment:
   VM_RUNNER_LABEL     runner label the workflows target through MACOS_VM_RUNNER (default: mirroir-vm)
   VM_RUNNER_MAX_SECS  stop a VM that has run this long (default: 10800, three hours)
   VM_RUNNER_GROUP_ID  runner group id (default: 1, the repository's default group)
+  VM_RUNNER_IDLE_POLL_SECS  how often to ask GitHub for a queued job (default: 20)
 EOF
 }
 
@@ -38,8 +40,26 @@ LABEL="${VM_RUNNER_LABEL:-mirroir-vm}"
 MAX_SECS="${VM_RUNNER_MAX_SECS:-10800}"
 GROUP_ID="${VM_RUNNER_GROUP_ID:-1}"
 POLL_SECS=5
+IDLE_POLL_SECS="${VM_RUNNER_IDLE_POLL_SECS:-20}"
 
 log() { echo "[vm-runner $slot $(date +%H:%M:%S)] $*"; }
+
+# Whether GitHub has a job queued for LABEL. A job of an in-progress run can
+# still be queued (it waits for a runner while its siblings run), so both kinds
+# of run are checked.
+job_waiting() {
+    local status run waiting
+    for status in queued in_progress; do
+        for run in $(gh api "repos/$VM_RUNNER_REPO/actions/runs?status=$status&per_page=50" \
+                --jq '.workflow_runs[].id' 2>/dev/null); do
+            waiting="$(gh api "repos/$VM_RUNNER_REPO/actions/runs/$run/jobs?per_page=100" \
+                --jq "[.jobs[] | select(.status == \"queued\" and (.labels | index(\"$LABEL\")))] | length" \
+                2>/dev/null)"
+            (( ${waiting:-0} > 0 )) && return 0
+        done
+    done
+    return 1
+}
 
 # One job: a fresh VM, a runner registered for exactly one job, and cleanup
 # of both whatever happens to the job. A subshell, so its EXIT trap cleans up
@@ -51,16 +71,18 @@ run_one() (
     runner_id=""
     vm_pid=""
 
+    # Best effort, every step: errexit still applies inside an EXIT trap, so
+    # one failing command here would replace the job's exit status.
     cleanup() {
-        [[ -n "$vm_pid" ]] && kill "$vm_pid" 2>/dev/null
-        tart stop "$name" >/dev/null 2>&1
-        tart delete "$name" >/dev/null 2>&1
-        # An ephemeral runner unregisters itself after its job; one whose VM
-        # was stopped first would linger as an offline runner.
+        if [[ -n "$vm_pid" ]]; then kill "$vm_pid" 2>/dev/null || true; fi
+        tart stop "$name" >/dev/null 2>&1 || true
+        tart delete "$name" >/dev/null 2>&1 || true
+        # An ephemeral runner unregisters itself after its job (so this is
+        # usually a 404); one whose VM was stopped first would linger offline.
         if [[ -n "$runner_id" ]]; then
-            gh api -X DELETE "repos/$VM_RUNNER_REPO/actions/runners/$runner_id" >/dev/null 2>&1
+            gh api -X DELETE "repos/$VM_RUNNER_REPO/actions/runners/$runner_id" >/dev/null 2>&1 || true
         fi
-        rm -rf "$job_dir"
+        rm -rf "$job_dir" || true
     }
     trap cleanup EXIT
 
@@ -94,6 +116,8 @@ run_one() (
 FAILURE_BACKOFF_SECS=30
 
 while true; do
+    # On demand: no VM, and none of its cores or memory, until a job waits for one.
+    until job_waiting; do sleep "$IDLE_POLL_SECS"; done
     if run_one; then
         (( once )) && break
     else
