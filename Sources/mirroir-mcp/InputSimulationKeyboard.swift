@@ -13,7 +13,7 @@ import HelperLib
 extension InputSimulation {
 
     /// Trigger a shake gesture on the mirrored iPhone.
-    /// Sends Ctrl+Cmd+Z via CGEvent which triggers shake-to-undo in iOS apps.
+    /// Sends Ctrl+Cmd+Z through the key poster, which triggers shake-to-undo in iOS apps.
     func shake() -> TypeResult {
         let prep = prepareKeyCall(tag: "shake")
         defer { prep.handback.finish(targetPID: targetPID) }
@@ -23,7 +23,11 @@ extension InputSimulation {
 
         DebugLog.log("shake", "sending shake gesture via CGEvent")
 
-        let result = CGEventInput.shake(targetPID: nil)
+        // HID tap (nil PID), like press_key: on macOS 27 keys addressed to the
+        // process never reach the phone (see prepareKeyCall).
+        let result = keyPoster.postKey(
+            keycode: CGEventInput.shakeKeycode, flags: CGEventInput.shakeFlags,
+            targetPID: nil)
         DebugLog.log("shake", "CGEvent=\(result ? "OK" : "FAILED")")
         if result {
             return TypeResult(success: true, error: nil)

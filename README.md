@@ -13,6 +13,13 @@
 ### Let your agent use your real iPhone, then replay what it did without an LLM.
 
 <p align="center">
+  <a href="https://mirroir.dev/?utm_source=github&utm_medium=readme&utm_campaign=header">Website</a> ·
+  <a href="docs/onboarding.md">Set up with your agent</a> ·
+  <a href="docs/tools.md">Tools</a> ·
+  <a href="https://discord.gg/u8ug9QCSqF">Discord</a>
+</p>
+
+<p align="center">
   <img src="website/public/video2-waze-slack.gif" alt="An agent reads the commute time in Waze on a real iPhone, then posts it in a Slack channel" width="720" />
 </p>
 <p align="center"><em>A real run on a real iPhone, sped up: the agent reads the ETA in Waze, then posts it in Slack.</em></p>
@@ -54,7 +61,7 @@ Start recording, open Instagram, scroll the feed and open my profile, stop recor
 ## Why mirroir
 
 - **Nothing to install on the phone.** The iPhone stays stock: no signing, no provisioning profile, no on-device agent. If iPhone Mirroring shows it, mirroir can drive it.
-- **Your Mac stays yours.** Swipes reach the mirror without bringing it to the front, so you can keep working. Taps, typing, drags and two-finger gestures bring it forward for a moment, then hand your app back.
+- **Your Mac stays yours.** Taps, typing and swipes reach the mirror without bringing it to the front, so you can keep working. Drags and two-finger gestures bring it forward for a moment, then hand your app back.
 - **Explore once, replay without an LLM.** `generate_skill` explores an app and writes [SKILL.md](docs/skills-and-ci.md#skills) files. A compiled skill replays from the CLI with no AI in the loop (`mirroir test`), so CI runs are deterministic and cost no tokens.
 - **One test across phone, web and backend.** [`mirroir-run`](docs/mirroir-run.md) is our companion test runner, a separate binary. One YAML scenario can drive the iPhone, a browser, HTTP endpoints and subprocesses, then compare what the page and the phone showed. See [Web and iOS in one scenario](docs/web-and-ios.md).
 - **Drift fails loudly.** `mirroir-run` has a third verdict beside pass and fail: `DRIFT`, exit code **65**, when every assertion held but the output moved past its baseline. Your CI lane decides whether drift blocks a merge.
@@ -85,11 +92,11 @@ phone-harness is the closest tool here: it also drives a stock iPhone through iP
 
 Giving an AI access to your phone demands defense in depth, so mirroir-mcp is **fail-closed**.
 
-- **Read-only until you say otherwise.** Without a config file, only the 12 read-only tools are exposed. Every tool that changes something stays hidden from the client until you allow it in [`permissions.json`](docs/permissions.md).
+- **Read-only until you say otherwise.** Without a config file, only the 13 read-only tools are exposed. Every tool that changes something stays hidden from the client until you allow it in [`permissions.json`](docs/permissions.md).
 - **Sensitive apps can be blocked.** `blockedApps` keeps the AI out of apps like Wallet or Banking, even when other tools are allowed.
 - **Passwords stay yours.** mirroir never presses a sheet that asks for a password or Touch ID, and it tells agents to ask you before sending, buying, deleting or changing a setting.
 - **No root, no daemon, no telemetry.** It runs as your user with Screen Recording and Accessibility. The one network call it makes by default is a once-a-day version check against npm (`updateCheck: false` turns it off). What your agent reads from the screen goes to whichever model your client uses.
-- **Kill switch.** Close iPhone Mirroring to stop all input instantly.
+- **Kill switch.** Unlock the iPhone, lock the Mac's screen, or quit your MCP client: each stops all input at once. Quitting the iPhone Mirroring app does not, because the next action reopens it.
 
 See [Security](docs/security.md) for the full threat model.
 
@@ -98,7 +105,7 @@ See [Security](docs/security.md) for the full threat model.
 | | |
 |---|---|
 | [Install](docs/install.md) | Every install path, per-client setup, updating, uninstalling |
-| [Onboarding](docs/onboarding.md) | Setup written for the agent: prerequisites, install, doctor, and a read-only proof |
+| [Onboarding](docs/onboarding.md) | Setup written for the agent: prerequisites, install, doctor, a read-only proof, and an optional first errand |
 | [Tools Reference](docs/tools.md) | All 41 tools, parameters, and input workflows |
 | [How mirroir sees the screen](docs/screen-intelligence.md) | The observe, reason, act loop; OCR, icon detection, AI vision |
 | [Skills, exploration and CI](docs/skills-and-ci.md) | APP.md, skills, `generate_skill`, `mirroir test`, compiled replay, AI diagnosis, patterns |
@@ -116,7 +123,6 @@ See [Security](docs/security.md) for the full threat model.
 | [YOLO Icon Detection](docs/yolo-models.md) | Recommended YOLO models, CoreML setup, and configuration |
 | [Compiled Skills](docs/compiled-skills.md) | Zero-OCR skill replay |
 | [Testing](docs/testing.md) | FakeMirroring, integration tests, and CI strategy |
-| [Self-hosted CI runner](docs/vm-runner.md) | Run the macOS CI jobs in a throwaway VM on your own Mac |
 | [Web and iOS in one scenario](docs/web-and-ios.md) | How `mirroir-run` hands iOS blocks to `mirroir-mcp`, and how `cross_surface` compares a browser with a phone |
 | [Cross-surface replay](runner/docs/) | `mirroir-run` scenario grammar, `.mirroir/` plan, `SAMPLE.md`, judge profiles, CI |
 | [Troubleshooting](docs/troubleshooting.md) | Debug mode and common issues |

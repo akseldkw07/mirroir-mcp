@@ -31,7 +31,7 @@ struct PermissionClassificationTests {
             "screenshot", "describe_screen", "start_recording",
             "stop_recording", "get_orientation", "status",
             "check_health", "list_targets", "list_skills",
-            "get_skill", "calibrate_component", "classify_screen",
+            "get_skill", "calibrate_component", "classify_screen", "get_notes",
         ]
         #expect(PermissionPolicy.readonlyTools == expected)
     }
@@ -44,7 +44,7 @@ struct PermissionClassificationTests {
             "open_url", "press_home", "press_app_switcher", "press_back",
             "spotlight", "scroll_to", "scroll_to_top", "read_scrolling_list", "reset_app", "measure", "set_network",
             "switch_target", "record_step", "save_compiled",
-            "generate_skill", "run_steps",
+            "generate_skill", "run_steps", "save_note",
         ]
         #expect(PermissionPolicy.mutatingTools == expected)
     }
