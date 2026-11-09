@@ -21,13 +21,15 @@ job installs or leaves behind reaches the next job or the host.
 
 The runner is on demand: while no job waits, no VM runs and none of its cores (6) or
 memory (12 GB) are taken. A job waits about 30 seconds longer to start while its VM boots.
+A VM whose runner gets no job within 5 minutes (the job was cancelled, or taken elsewhere)
+is stopped and deleted.
 
 ## Routing jobs to it
 
 The macOS jobs that a push or pull request starts use this `runs-on`:
 
 ```yaml
-runs-on: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) && vars.MACOS_VM_RUNNER || 'macos-15' }}
+runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
 ```
 
 - With the repository variable `MACOS_VM_RUNNER` unset, every job stays on GitHub's

@@ -17,6 +17,8 @@ if [[ "$1" == "run" ]]; then
     for arg in "$@"; do
         [[ "$arg" == --dir=job:* ]] && cp "${arg#--dir=job:}/jitconfig" "$STUB_SEEN_JIT"
     done
+    # A VM whose runner never gets a job stays up until it is stopped.
+    [[ -n "${STUB_RUN_BLOCK:-}" ]] && sleep 60
     exit "${STUB_RUN_EXIT:-0}"
 fi
 [[ "$1" == "clone" ]] && exit "${STUB_CLONE_EXIT:-0}"
@@ -30,6 +32,9 @@ echo "gh $*" >> "$STUB_LOG"
 # Runs with a job waiting for the label: run 777 holds STUB_WAITING_JOBS of them.
 [[ "$*" == *"actions/runs?status="* ]] && echo 777
 [[ "$*" == *"actions/runs/777/jobs"* ]] && echo "${STUB_WAITING_JOBS:-1}"
+# Whether the registered runner is running a job.
+[[ "$*" == *"actions/runners/4321 "* || "$*" == *"actions/runners/4321" ]] && [[ "$*" != *DELETE* ]] \
+    && echo "${STUB_RUNNER_BUSY:-true}"
 # GitHub removes a one-job runner after its job, so deleting it again is a 404.
 [[ "$*" == *"-X DELETE"* ]] && exit 1
 exit 0
@@ -87,6 +92,20 @@ if (( status != 0 )) && grep -q '^tart delete mirroir-vm-' "$STUB_LOG" \
 else
     echo "FAIL a failed VM fails --once and is still deleted with its runner (exit $status)"
     cat "$STUB_LOG" "$WORK/out.log"; exit 1
+fi
+
+# A VM whose runner gets no job (the job was cancelled, or another runner took
+# it) is stopped after the grace period instead of holding its cores.
+: > "$STUB_LOG"
+STUB_RUN_BLOCK=1 STUB_RUNNER_BUSY=false VM_RUNNER_IDLE_GRACE_SECS=2 \
+    bash "$HERE/host-loop.sh" --once > "$WORK/out.log" 2>&1 &
+grace_pid=$!
+for _ in $(seq 1 30); do kill -0 "$grace_pid" 2>/dev/null || break; sleep 1; done
+if ! kill -0 "$grace_pid" 2>/dev/null && grep -q '^tart delete mirroir-vm-' "$STUB_LOG"; then
+    echo "ok   a VM whose runner gets no job is stopped and deleted"
+else
+    kill "$grace_pid" 2>/dev/null || true
+    echo "FAIL a VM whose runner gets no job is stopped and deleted"; cat "$STUB_LOG" "$WORK/out.log"; exit 1
 fi
 
 : > "$STUB_LOG"

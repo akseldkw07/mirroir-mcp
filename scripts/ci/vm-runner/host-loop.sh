@@ -41,6 +41,10 @@ MAX_SECS="${VM_RUNNER_MAX_SECS:-10800}"
 GROUP_ID="${VM_RUNNER_GROUP_ID:-1}"
 POLL_SECS=5
 IDLE_POLL_SECS="${VM_RUNNER_IDLE_POLL_SECS:-20}"
+# A VM boots for a queued job, but the job can be cancelled (a push run's
+# duplicate, once its pull request run starts) or taken by another runner
+# before this one is up. A runner that has run no job by then is stopped.
+IDLE_GRACE_SECS="${VM_RUNNER_IDLE_GRACE_SECS:-300}"
 
 log() { echo "[vm-runner $slot $(date +%H:%M:%S)] $*"; }
 
@@ -99,10 +103,20 @@ run_one() (
     tart run --no-graphics --dir="job:$job_dir" "$name" &
     vm_pid=$!
     started=$SECONDS
+    ran_a_job=0
     while kill -0 "$vm_pid" 2>/dev/null; do
         if (( SECONDS - started >= MAX_SECS )); then
             log "$name ran past ${MAX_SECS}s; stopping it"
             exit 1
+        fi
+        if (( ! ran_a_job )); then
+            busy="$(gh api "repos/$VM_RUNNER_REPO/actions/runners/$runner_id" --jq .busy 2>/dev/null)"
+            if [[ "$busy" == true ]]; then
+                ran_a_job=1
+            elif (( SECONDS - started >= IDLE_GRACE_SECS )); then
+                log "$name got no job within ${IDLE_GRACE_SECS}s; stopping it"
+                exit 0
+            fi
         fi
         sleep "$POLL_SECS"
     done

@@ -72,7 +72,7 @@ jobs:
   install-test:
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    runs-on: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) && vars.MACOS_VM_RUNNER || 'macos-15' }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
     permissions:
       contents: read
     env:

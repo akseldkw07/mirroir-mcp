@@ -60,7 +60,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) && vars.MACOS_VM_RUNNER || 'macos-15' }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
     # The job takes ~40 min; twice that is a hang, not a slow runner.
     timeout-minutes: 80
     permissions:
@@ -847,7 +847,7 @@ jobs:
   # shipped. Deliberately does NOT install embacle: absence is the test.
   build-without-embacle:
     name: Build without embacle-ffi
-    runs-on: ${{ (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) && vars.MACOS_VM_RUNNER || 'macos-15' }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
     permissions:
       contents: read
     steps:
