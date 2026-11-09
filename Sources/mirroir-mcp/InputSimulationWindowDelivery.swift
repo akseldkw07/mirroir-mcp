@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 //
 // ABOUTME: Chooses between posting input to the target's window directly and the HID path that brings it to the front.
-// ABOUTME: Taps and escape clicks go to the window when a poster can address it; keys borrow the front, then return it.
+// ABOUTME: Swipes go to the window when a poster can address it; keys borrow the front, then return it; escape clicks are HID.
 
 import CoreGraphics
 import Foundation
@@ -30,18 +30,12 @@ extension InputSimulation {
     }
 
     /// The click the session-escape plugins free a paused session with, at a
-    /// screen point. It goes to the window by record when the window can be
-    /// addressed, so freeing the session does not take the front either;
-    /// otherwise it is a HID click.
+    /// screen point: a HID click, since a window-addressed click never reaches
+    /// the iPhone on macOS 27 (measured 2026-11-08).
     func escapeClick() -> (CGPoint) -> Void {
         let pid = cursorFreePID
         return { [self] point in
-            if let info = bridge.getWindowInfo(), let poster = windowDelivery(for: info) {
-                let local = CGPoint(x: point.x - info.position.x, y: point.y - info.position.y)
-                _ = poster.click(at: local, holdUs: CGEventInput.clickHoldUs, in: info)
-            } else {
-                _ = CGEventInput.click(at: point, targetPID: pid)
-            }
+            _ = clickPoster.click(at: point, targetPID: pid)
         }
     }
 }

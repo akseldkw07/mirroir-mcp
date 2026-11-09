@@ -200,18 +200,25 @@ protocol KeyEventPosting: Sendable {
     func postKeySequence(_ sequence: CGKeySequence, targetPID: pid_t?) -> Bool
 }
 
-/// Posts clicks and keystroke focus to one window without making its app
+/// Posts the clicks of tap, double tap and long press at a screen point, to
+/// the HID event tap or, when `targetPID` is set, to that one process. They
+/// land in whatever window is under the point, so the target must be in front.
+protocol ClickPosting: Sendable {
+    /// Press and lift the primary button. Returns false when it was not posted.
+    func click(at point: CGPoint, targetPID: pid_t?) -> Bool
+    /// Two clicks, the second numbered 2. Returns false when it was not posted.
+    func doubleClick(at point: CGPoint, targetPID: pid_t?) -> Bool
+    /// Press, hold for `durationMs`, lift. Returns false when it was not posted.
+    func longPress(at point: CGPoint, durationMs: Int, targetPID: pid_t?) -> Bool
+}
+
+/// Addresses a swipe's scroll events to one window without making its app
 /// active, so the user keeps the Mac's front app and cursor. Points are
 /// window-local.
 protocol WindowEventPosting: Sendable {
-    /// Press (`down`) or lift the primary button at `point` in `window`, as
-    /// click `clickCount` of a multi-click. Returns false when it was not posted.
-    func postButton(down: Bool, at point: CGPoint, clickCount: Int, in window: WindowInfo) -> Bool
-    /// Make `window` its app's key window, so key events posted to its
-    /// process reach it. Returns false when it was not posted.
+    /// Make `window` its app's key window, so events posted to its process
+    /// reach it. Returns false when it was not posted.
     func focusKeys(in window: WindowInfo) -> Bool
-    /// Wait between button events.
-    func pause(microseconds: UInt32)
     /// Whether `stamp` can address an event to a window on this Mac.
     var canStampEvents: Bool { get }
     /// Address `event` to `window` at the window-local `point`, so posting it

@@ -17,7 +17,7 @@ See [Security](security.md) for the full threat model and recommendations.
 
 ## Why does my cursor jump when the AI is working?
 
-On iPhone Mirroring it only jumps for some gestures. Taps, typing and swipes (`tap`, `double_tap`, `long_press`, `type_text`, `press_key`, `launch_app`, `swipe`, `scroll_to`) are sent straight to the iPhone Mirroring window: your front app keeps focus and the cursor stays where it is. `drag`, `pinch` and `rotate` use HID input: they bring iPhone Mirroring forward for their duration, then return the front and the pointer. `hold_keys` and `touch` bring it to the front and leave it there.
+On iPhone Mirroring, swipes (`swipe`, `scroll_to`) are sent straight to the iPhone Mirroring window: your front app keeps focus and the cursor stays where it is. On macOS 27 the iPhone ignores clicks and keystrokes sent that way, so taps (`tap`, `double_tap`, `long_press`) and typing (`type_text`, `press_key`, `launch_app`) bring iPhone Mirroring forward briefly, then give your app the front back. `drag`, `pinch` and `rotate` use HID input: they bring iPhone Mirroring forward for their duration, then return the front and the pointer. `hold_keys` and `touch` bring it to the front and leave it there.
 
 **Mitigations for gestures:**
 

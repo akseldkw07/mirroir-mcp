@@ -62,6 +62,8 @@ final class InputSimulation: Sendable {
     let pasteVerifier: (any ScreenDescribing)?
     /// The key event poster behind type_text and press_key.
     let keyPoster: any KeyEventPosting
+    /// The click poster behind tap, double tap and long press.
+    let clickPoster: any ClickPosting
     /// The pasteboard type_text pastes unmappable runs through.
     let pasteboard: any PasteboardAccessing
     /// Which app owns a screen point, for the cover guard (`coverRefusal`).
@@ -70,9 +72,9 @@ final class InputSimulation: Sendable {
     let recovery: MirroringRecovery
     /// Gives focus back to the previous app after input (`restoreFocus`); nil keeps the mirror front.
     let focusRestorer: FocusRestorer?
-    /// Posts taps and keystrokes straight to the target's window without
-    /// making it the front app. Nil sends all input through the HID path,
-    /// which brings the target to the front first.
+    /// Addresses a swipe's scroll events straight to the target's window
+    /// without making it the front app. Nil sends swipes through the HID
+    /// path, which brings the target to the front first.
     let windowPoster: (any WindowEventPosting)?
     /// The Mac's front app and pointer, which a swipe or drag borrows and returns.
     let macFront: MacFront
@@ -100,6 +102,7 @@ final class InputSimulation: Sendable {
          heldInputPoster: any HeldInputPosting = CGEventHeldInputPoster(),
          pasteVerifier: (any ScreenDescribing)? = nil,
          keyPoster: any KeyEventPosting = CGEventKeyPoster(),
+         clickPoster: any ClickPosting = CGEventClickPoster(),
          pasteboard: any PasteboardAccessing = GeneralPasteboard(),
          pointOwner: any PointOwnerLocating = AccessibilityPointOwnerLocator(),
          recovery: MirroringRecovery = .none,
@@ -119,6 +122,7 @@ final class InputSimulation: Sendable {
             WindowStableDescriber(wrapping: $0, bridge: bridge)
         }
         self.keyPoster = keyPoster
+        self.clickPoster = clickPoster
         self.pasteboard = pasteboard
         self.cursorMode = cursorMode
         self.touchSession = touchSession
@@ -200,7 +204,7 @@ final class InputSimulation: Sendable {
     /// ensures every pointing operation uses the window's *current* coordinates.
     ///
     /// `byWindow` marks an operation that can be posted to the window itself
-    /// (tap, double tap, long press). When the target has a window poster,
+    /// (a swipe's scroll events). When the target has a window poster,
     /// such an operation returns it in `windowPoster` and skips activation
     /// and the point-ownership guard: the event is addressed to the window,
     /// so it cannot land in whatever covers that point, and the user keeps
@@ -318,15 +322,14 @@ final class InputSimulation: Sendable {
 
     /// Tap at a position relative to the target window.
     /// Returns nil on success, or an error message on failure.
+    ///
+    /// Taps, long presses and double taps are HID clicks, which need the target
+    /// in front: window-addressed clicks never reached the iPhone on macOS 27
+    /// (measured 2026-11-08, with the mirror in front or not). The focus
+    /// restorer gives the previous app the front back once input goes quiet.
     func tap(x: Double, y: Double, cursorMode override: CursorMode? = nil) -> String? {
-        let prep = preparePointingInput(tag: "tap", x: x, y: y, byWindow: true)
+        let prep = preparePointingInput(tag: "tap", x: x, y: y)
         guard let info = prep.info else { return prep.error ?? "Unknown error" }
-        if let poster = prep.windowPoster {
-            let posted = poster.click(at: CGPoint(x: x, y: y), holdUs: CGEventInput.clickHoldUs, in: info)
-            DebugLog.log("tap", "relative=(\(x),\(y)) window record=\(posted ? "OK" : "FAILED")")
-            guard posted else { return "Window click failed" }
-            return checkLivenessAfter(tag: "tap", action: "The tap")
-        }
 
         let saved = saveCursor(mode: override)
         defer { restoreCursor(saved) }
@@ -335,7 +338,7 @@ final class InputSimulation: Sendable {
         let screenY = info.position.y + CGFloat(y)
         DebugLog.log("tap", "relative=(\(x),\(y)) screen=(\(Int(screenX)),\(Int(screenY)))")
 
-        let result = CGEventInput.click(at: CGPoint(x: screenX, y: screenY), targetPID: cursorFreePID)
+        let result = clickPoster.click(at: CGPoint(x: screenX, y: screenY), targetPID: cursorFreePID)
         DebugLog.log("tap", "CGEvent=\(result ? "OK" : "FAILED")")
         guard result else { return "CGEvent click failed" }
         return checkLivenessAfter(tag: "tap", action: "The tap")
@@ -345,15 +348,8 @@ final class InputSimulation: Sendable {
     /// Returns nil on success, or an error message on failure.
     func longPress(x: Double, y: Double, durationMs: Int = 500,
                    cursorMode override: CursorMode? = nil) -> String? {
-        let prep = preparePointingInput(tag: "longPress", x: x, y: y, byWindow: true)
+        let prep = preparePointingInput(tag: "longPress", x: x, y: y)
         guard let info = prep.info else { return prep.error ?? "Unknown error" }
-        if let poster = prep.windowPoster {
-            let holdUs = UInt32(CGEventInput.safeDurationMs(durationMs)) * 1000
-            let posted = poster.click(at: CGPoint(x: x, y: y), holdUs: holdUs, in: info)
-            DebugLog.log("longPress", "relative=(\(x),\(y)) duration=\(durationMs)ms window record=\(posted ? "OK" : "FAILED")")
-            guard posted else { return "Window long press failed" }
-            return checkLivenessAfter(tag: "longPress", action: "The long press")
-        }
 
         let saved = saveCursor(mode: override)
         defer { restoreCursor(saved) }
@@ -362,7 +358,7 @@ final class InputSimulation: Sendable {
         let screenY = Double(info.position.y) + y
         DebugLog.log("longPress", "relative=(\(x),\(y)) screen=(\(Int(screenX)),\(Int(screenY))) duration=\(durationMs)ms")
 
-        let result = CGEventInput.longPress(at: CGPoint(x: screenX, y: screenY), durationMs: durationMs, targetPID: cursorFreePID)
+        let result = clickPoster.longPress(at: CGPoint(x: screenX, y: screenY), durationMs: durationMs, targetPID: cursorFreePID)
         DebugLog.log("longPress", "CGEvent=\(result ? "OK" : "FAILED")")
         guard result else { return "CGEvent long press failed" }
         return checkLivenessAfter(tag: "longPress", action: "The long press")
@@ -371,14 +367,8 @@ final class InputSimulation: Sendable {
     /// Double-tap at a position relative to the target window.
     /// Returns nil on success, or an error message on failure.
     func doubleTap(x: Double, y: Double, cursorMode override: CursorMode? = nil) -> String? {
-        let prep = preparePointingInput(tag: "doubleTap", x: x, y: y, byWindow: true)
+        let prep = preparePointingInput(tag: "doubleTap", x: x, y: y)
         guard let info = prep.info else { return prep.error ?? "Unknown error" }
-        if let poster = prep.windowPoster {
-            let posted = poster.doubleClick(at: CGPoint(x: x, y: y), gapUs: CGEventInput.clickHoldUs, in: info)
-            DebugLog.log("doubleTap", "relative=(\(x),\(y)) window record=\(posted ? "OK" : "FAILED")")
-            guard posted else { return "Window double tap failed" }
-            return checkLivenessAfter(tag: "doubleTap", action: "The double tap")
-        }
 
         let saved = saveCursor(mode: override)
         defer { restoreCursor(saved) }
@@ -387,7 +377,7 @@ final class InputSimulation: Sendable {
         let screenY = Double(info.position.y) + y
         DebugLog.log("doubleTap", "relative=(\(x),\(y)) screen=(\(Int(screenX)),\(Int(screenY)))")
 
-        let result = CGEventInput.doubleTap(at: CGPoint(x: screenX, y: screenY), targetPID: cursorFreePID)
+        let result = clickPoster.doubleClick(at: CGPoint(x: screenX, y: screenY), targetPID: cursorFreePID)
         DebugLog.log("doubleTap", "CGEvent=\(result ? "OK" : "FAILED")")
         guard result else { return "CGEvent double tap failed" }
         return checkLivenessAfter(tag: "doubleTap", action: "The double tap")

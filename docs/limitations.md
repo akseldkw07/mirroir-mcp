@@ -2,17 +2,17 @@
 
 ## Focus Stealing
 
-On iPhone Mirroring, taps, keystrokes and swipes no longer take the front: the app you are using keeps keyboard focus and the cursor does not move. Drags and two-finger gestures still bring iPhone Mirroring forward for their duration, then return the front and the pointer.
+On iPhone Mirroring, swipes do not take the front: the app you are using keeps keyboard focus and the cursor does not move. On macOS 27, window-addressed clicks and keystrokes no longer reach the iPhone, so taps and keys bring iPhone Mirroring forward briefly; drags and two-finger gestures do so for their duration. The front is then returned.
 
 | Input | Front app | How it reaches the iPhone |
 |-------|-----------|---------------------------|
-| `tap`, `double_tap`, `long_press`, `press_back` (an OCR tap on the back chevron) | Kept | A window event addressed to the iPhone Mirroring window. It lands even when other windows cover the mirror. |
-| `type_text`, `press_key`, `shake`, the typing inside `launch_app` and `open_url` | Kept | One event makes the mirror the key window of its own app, without activating it; the keys are then addressed to the iPhone Mirroring process. |
+| `tap`, `double_tap`, `long_press`, `press_back` (an OCR tap on the back chevron) | Borrowed | HID clicks at the point, which need iPhone Mirroring in front. It is activated for the click; the previous app gets the front back once input goes quiet, so a run of taps switches focus once. |
+| `type_text`, `press_key`, `shake`, the typing inside `launch_app` and `open_url` | Borrowed | HID key events. iPhone Mirroring forwards keys only while it is the active app, so it is activated for the keys, then the previous front app gets the front back. |
 | `swipe`, `scroll_to` | Kept | Scroll events addressed to the iPhone Mirroring window. They land with the mirror fully covered and the cursor elsewhere. |
 | `drag`, `pinch`, `rotate` | Borrowed | HID events, which macOS routes to the frontmost app. iPhone Mirroring is activated for the gesture (measured: about 1 s), then the previous front app and the pointer are returned. |
 | `hold_keys`, `touch` | Taken | HID events that span the gesture or several calls. iPhone Mirroring is activated first and keeps the front afterwards. |
 
-Measured on macOS 26.5 with iTerm in front and the front app sampled every 0.2s: Clock tab taps, taps with a Finder window over the whole mirror, typing, a select-all/copy/delete/paste round trip, back-to-back Spotlight launches and a launch that first had to start iPhone Mirroring all left iTerm in front throughout.
+On macOS 26.5, taps and keystrokes also went to the window without activating it. On macOS 27 (measured 2026-11-08) window click records, stamped click events and process-addressed keystrokes all left the iPhone untouched, with the mirror in front or not, while HID clicks and keys landed; swipes still land as window events. With Spotify in front and the front app sampled every second, `launch_app` held iPhone Mirroring in front for about a second while typing, then returned Spotify; swipes never moved it.
 
 ### Why Gestures Still Take the Front
 

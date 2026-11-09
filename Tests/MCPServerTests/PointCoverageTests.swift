@@ -85,6 +85,16 @@ final class PointCoverageTests: XCTestCase {
                        .covered(ownerPID: otherPID, ownerName: nil))
     }
 
+    /// Measured 2026-11-08 on macOS 27: the window server lists the pointer as
+    /// a 28x40 "Cursor" window at the cursor level. Left over the mirror by
+    /// the previous long press, it sat on the next one's point.
+    func testThePointerOverThePointDoesNotCover() {
+        let cursor = CGRect(x: point.x - 5, y: point.y - 5, width: 28, height: 40)
+        let cursorLevel = Int(CGWindowLevelForKey(.cursorWindow))
+        XCTAssertEqual(verdict([entry(otherPID, cursor, layer: cursorLevel, name: "Window Server"),
+                                entry(mirrorPID, mirror)]), .clear)
+    }
+
     func testNoTargetWindowUnderThePointCannotBeJudged() {
         XCTAssertEqual(verdict([entry(otherPID, display)]), .targetNotUnderPoint)
     }

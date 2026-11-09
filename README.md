@@ -54,7 +54,7 @@ Start recording, open Instagram, scroll the feed and open my profile, stop recor
 ## Why mirroir
 
 - **Nothing to install on the phone.** The iPhone stays stock: no signing, no provisioning profile, no on-device agent. If iPhone Mirroring shows it, mirroir can drive it.
-- **Your Mac stays yours.** Taps, typing and swipes reach the mirror without bringing it to the front, so you can keep working. Drags and two-finger gestures bring it forward for a moment, then hand your app back.
+- **Your Mac stays yours.** Swipes reach the mirror without bringing it to the front, so you can keep working. Taps, typing, drags and two-finger gestures bring it forward for a moment, then hand your app back.
 - **Explore once, replay without an LLM.** `generate_skill` explores an app and writes [SKILL.md](docs/skills-and-ci.md#skills) files. A compiled skill replays from the CLI with no AI in the loop (`mirroir test`), so CI runs are deterministic and cost no tokens.
 - **One test across phone, web and backend.** [`mirroir-run`](docs/mirroir-run.md) is our companion test runner, a separate binary. One YAML scenario can drive the iPhone, a browser, HTTP endpoints and subprocesses, then compare what the page and the phone showed. See [Web and iOS in one scenario](docs/web-and-ios.md).
 - **Drift fails loudly.** `mirroir-run` has a third verdict beside pass and fail: `DRIFT`, exit code **65**, when every assertion held but the output moved past its baseline. Your CI lane decides whether drift blocks a merge.

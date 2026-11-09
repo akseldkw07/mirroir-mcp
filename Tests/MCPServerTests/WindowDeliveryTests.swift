@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 //
 // ABOUTME: Tests which input InputSimulation posts straight to the target's window and which keeps the HID path.
-// ABOUTME: Pins taps to the window poster with no activation; keys, drags and HID swipes need the front.
+// ABOUTME: Pins swipes to the window poster with no activation; taps, keys, drags and HID swipes need the front.
 
 import CoreGraphics
 import XCTest
@@ -18,7 +18,7 @@ final class WindowDeliveryTests: XCTestCase {
     /// Mac running the tests is brought forward.
     private func makeInput(
         poster: RecordingWindowPoster?, keys: RecordingKeyPoster = RecordingKeyPoster(),
-        windowID: CGWindowID? = nil
+        clicks: RecordingClickPoster = RecordingClickPoster(), windowID: CGWindowID? = nil
     ) -> InputSimulation {
         let bridge = StubBridge()
         bridge.processRunning = false
@@ -27,34 +27,47 @@ final class WindowDeliveryTests: XCTestCase {
             windowID: windowID ?? self.windowID, position: CGPoint(x: 100, y: 50),
             size: CGSize(width: 410, height: 898), pid: windowPID)
         return InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
-                               keyPoster: keys, windowPoster: poster)
+                               keyPoster: keys, clickPoster: clicks, windowPoster: poster)
     }
 
     // MARK: - Pointing
 
-    func testATapIsPostedToTheWindowWithoutActivatingTheTarget() {
+    /// The click that frees a paused session is a real HID click at the screen
+    /// point: a window-addressed one never reaches the iPhone on macOS 27.
+    func testTheEscapeClickIsAHIDClickEvenWithAWindowPoster() {
         let poster = RecordingWindowPoster()
-        XCTAssertNil(makeInput(poster: poster).tap(x: 200, y: 300, cursorMode: nil))
-        let point = CGPoint(x: 200, y: 300)
-        XCTAssertEqual(poster.buttons, [
-            .init(down: true, point: point, clickCount: 1, windowID: windowID),
-            .init(down: false, point: point, clickCount: 1, windowID: windowID),
-        ], "window-local point, addressed to the window")
-        XCTAssertEqual(poster.pauses, [CGEventInput.clickHoldUs])
+        let clicks = RecordingClickPoster()
+        makeInput(poster: poster, clicks: clicks).escapeClick()(CGPoint(x: 300, y: 400))
+        XCTAssertTrue(poster.keyFocusWindows.isEmpty)
+        XCTAssertEqual(clicks.clicks.map(\.point), [CGPoint(x: 300, y: 400)])
     }
 
-    func testADoubleTapNumbersItsSecondClick() {
+    /// Window-addressed clicks never reached the iPhone on macOS 27 (measured
+    /// 2026-11-08, mirror in front or not), so a tap takes the HID path, which
+    /// needs the front: refused here, with nothing posted and no window record.
+    func testWithAWindowPosterATapStillNeedsTheFront() {
         let poster = RecordingWindowPoster()
-        XCTAssertNil(makeInput(poster: poster).doubleTap(x: 10, y: 20, cursorMode: nil))
-        XCTAssertEqual(poster.buttons.map(\.clickCount), [1, 1, 2, 2])
-        XCTAssertEqual(poster.buttons.map(\.down), [true, false, true, false])
+        let clicks = RecordingClickPoster()
+        XCTAssertNotNil(makeInput(poster: poster, clicks: clicks).tap(x: 200, y: 300, cursorMode: nil))
+        XCTAssertTrue(clicks.clicks.isEmpty)
+        XCTAssertTrue(poster.keyFocusWindows.isEmpty)
     }
 
-    func testALongPressHoldsForItsDuration() {
+    func testWithAWindowPosterADoubleTapStillNeedsTheFront() {
         let poster = RecordingWindowPoster()
-        XCTAssertNil(makeInput(poster: poster).longPress(x: 10, y: 20, durationMs: 800, cursorMode: nil))
-        XCTAssertEqual(poster.buttons.map(\.down), [true, false])
-        XCTAssertEqual(poster.pauses, [800_000])
+        let clicks = RecordingClickPoster()
+        XCTAssertNotNil(makeInput(poster: poster, clicks: clicks).doubleTap(x: 10, y: 20, cursorMode: nil))
+        XCTAssertTrue(clicks.clicks.isEmpty)
+        XCTAssertTrue(poster.keyFocusWindows.isEmpty)
+    }
+
+    func testWithAWindowPosterALongPressStillNeedsTheFront() {
+        let poster = RecordingWindowPoster()
+        let clicks = RecordingClickPoster()
+        XCTAssertNotNil(makeInput(poster: poster, clicks: clicks)
+            .longPress(x: 10, y: 20, durationMs: 800, cursorMode: nil))
+        XCTAssertTrue(clicks.clicks.isEmpty)
+        XCTAssertTrue(poster.keyFocusWindows.isEmpty)
     }
 
     func testWithoutAWindowPosterATapNeedsTheFront() {
@@ -64,9 +77,10 @@ final class WindowDeliveryTests: XCTestCase {
 
     func testAWindowTheWindowServerDidNotNameKeepsTheHIDPath() {
         let poster = RecordingWindowPoster()
-        let message = makeInput(poster: poster, windowID: 0).tap(x: 200, y: 300, cursorMode: nil)
+        let message = makeInput(poster: poster, windowID: 0)
+            .swipe(fromX: 200, fromY: 600, toX: 200, toY: 200, durationMs: 100, cursorMode: nil)
         XCTAssertNotNil(message)
-        XCTAssertTrue(poster.buttons.isEmpty, "no window ID, nothing to address")
+        XCTAssertTrue(poster.stampedPoints.isEmpty, "no window ID, nothing to address")
     }
 
     /// Drag events and records lose their intermediate points on macOS 26: a
@@ -77,7 +91,7 @@ final class WindowDeliveryTests: XCTestCase {
         let input = makeInput(poster: poster)
         XCTAssertNotNil(input.drag(fromX: 200, fromY: 600, toX: 200, toY: 200,
                                    durationMs: 300, cursorMode: nil))
-        XCTAssertTrue(poster.buttons.isEmpty)
+        XCTAssertTrue(poster.stampedPoints.isEmpty)
         XCTAssertTrue(poster.keyFocusWindows.isEmpty)
     }
 

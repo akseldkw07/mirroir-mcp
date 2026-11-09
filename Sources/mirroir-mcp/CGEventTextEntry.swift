@@ -21,6 +21,23 @@ struct CGEventKeyPoster: KeyEventPosting {
     }
 }
 
+/// Live `ClickPosting`: forwards to `CGEventInput`, which posts to the HID
+/// event tap at a screen point, or to one process.
+struct CGEventClickPoster: ClickPosting {
+
+    func click(at point: CGPoint, targetPID: pid_t?) -> Bool {
+        CGEventInput.click(at: point, targetPID: targetPID)
+    }
+
+    func doubleClick(at point: CGPoint, targetPID: pid_t?) -> Bool {
+        CGEventInput.doubleTap(at: point, targetPID: targetPID)
+    }
+
+    func longPress(at point: CGPoint, durationMs: Int, targetPID: pid_t?) -> Bool {
+        CGEventInput.longPress(at: point, durationMs: durationMs, targetPID: targetPID)
+    }
+}
+
 /// Live `PasteboardAccessing`: `NSPasteboard.general`, the pasteboard
 /// Universal Clipboard syncs to the iPhone. Only the plain-text flavor is
 /// read and written.

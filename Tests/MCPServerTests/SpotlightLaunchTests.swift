@@ -34,8 +34,9 @@ final class SpotlightLaunchTests: XCTestCase {
     }
 
     private func launch(
-        name: String = "Horloge", screens: [ScreenDescriber.DescribeResult]
-    ) -> (error: String?, bridge: StubBridge, poster: RecordingWindowPoster, keys: RecordingKeyPoster) {
+        name: String = "Horloge", screens: [ScreenDescriber.DescribeResult],
+        clicks: RecordingClickPoster = RecordingClickPoster()
+    ) -> (error: String?, bridge: StubBridge, keys: RecordingKeyPoster) {
         // Typing takes the front (iPhone Mirroring forwards keys only while it is
         // active), so the stub reports the activation as done.
         let bridge = StubBridge()
@@ -48,9 +49,10 @@ final class SpotlightLaunchTests: XCTestCase {
         let poster = RecordingWindowPoster()
         let keys = RecordingKeyPoster()
         let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
-                                    pasteVerifier: describer, keyPoster: keys,
+                                    pasteVerifier: describer, keyPoster: keys, clickPoster: clicks,
+                                    pointOwner: TargetOwnsEveryPoint(pid: 777),
                                     windowPoster: poster, macFront: inertMac)
-        return (input.launchApp(name: name), bridge, poster, keys)
+        return (input.launchApp(name: name), bridge, keys)
     }
 
     /// A Mac with no front owner: the key calls' handback has nothing to return,
@@ -98,8 +100,9 @@ final class SpotlightLaunchTests: XCTestCase {
     }
 
     func testAnIdleSuggestionTileIsTypedOverNotTapped() {
-        let run = launch(name: "Notes", screens: [clock, idleSpotlight, typedInstalled])
-        XCTAssertTrue(run.poster.buttons.isEmpty, "the idle page takes typing; its tiles are not needed")
+        let clicks = RecordingClickPoster()
+        _ = launch(name: "Notes", screens: [clock, idleSpotlight, typedInstalled], clicks: clicks)
+        XCTAssertTrue(clicks.clicks.isEmpty, "the idle page takes typing; its tiles are not needed")
     }
 
     func testAnAppThatIsNotInstalledFailsWithoutReturn() {
@@ -132,8 +135,9 @@ final class SpotlightLaunchTests: XCTestCase {
             el(CoreMLElementDetector.iconLabel, 69, 526), el("App Store", 63, 599),
             el("Q Photos - Ouvrir", 129, 872),
         ])
-        let run = launch(name: "App Store", screens: [held, held, typedInstalled])
-        XCTAssertTrue(run.poster.buttons.isEmpty, "typed instead of tapping the heading")
+        let clicks = RecordingClickPoster()
+        _ = launch(name: "App Store", screens: [held, held, typedInstalled], clicks: clicks)
+        XCTAssertTrue(clicks.clicks.isEmpty, "typed instead of tapping the heading")
     }
 
     func testSpotlightAlreadyOpenIsNotToggledShut() {
@@ -148,10 +152,12 @@ final class SpotlightLaunchTests: XCTestCase {
         XCTAssertEqual(run.bridge.menuActionCalls.map(\.item), ["Spotlight"])
     }
 
+    /// A HID click, at the icon's screen point (the window sits at 100, 50).
     func testTheTileIsTappedInsideItsIconNotOnItsLabel() {
-        let run = launch(screens: [heldSpotlight, heldSpotlight, clock])
-        let tapped = run.poster.buttons.first?.point
-        XCTAssertEqual(tapped?.x, 80)
-        XCTAssertEqual(tapped?.y, 219 - SpotlightAppTile.iconTapLift)
+        let clicks = RecordingClickPoster()
+        _ = launch(screens: [heldSpotlight, heldSpotlight, clock], clicks: clicks)
+        let tapped = clicks.clicks.first?.point
+        XCTAssertEqual(tapped?.x, 100 + 80)
+        XCTAssertEqual(tapped?.y, 50 + 219 - SpotlightAppTile.iconTapLift)
     }
 }

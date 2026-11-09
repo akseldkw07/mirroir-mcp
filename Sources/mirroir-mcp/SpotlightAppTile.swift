@@ -93,6 +93,28 @@ enum SpotlightAppTile {
         return (heading.tapY ... (heading.tapY + topHitReach)).contains(label.tapY)
     }
 
+    /// Most letters OCR may misread in a first-row tile's label ("Relaj" for
+    /// "Reloj", Spanish iPhone, 2026-11-08) for it still to name the app.
+    static let firstRowLabelMisreads = 1
+
+    /// Whether the first result row under the search field is `name`'s tile, for
+    /// a Spotlight that shows no top-hit heading (Spanish iPhone, 2026-11-08: the
+    /// field at the top, then the top hit's tile beside its app shortcuts). The
+    /// field is the highest text starting with the query; the row is the next
+    /// baseline below it, and must hold several labels, the tile leftmost.
+    static func headsFirstRow(_ name: String, in elements: [TapPoint]) -> Bool {
+        let target = normalize(name)
+        guard !target.isEmpty,
+              let field = elements.filter({ normalize($0.text).hasPrefix(target) })
+                .min(by: { $0.tapY < $1.tapY }),
+              let first = elements.filter({ $0.tapY > field.tapY + rowTolerance })
+                .min(by: { $0.tapY < $1.tapY }) else { return false }
+        let row = elements.filter { onSameRow($0, first) }
+        guard row.count >= 2, let tile = row.min(by: { $0.tapX < $1.tapX }) else { return false }
+        return ScrollDeduplicator.levenshteinDistance(normalize(tile.text), target)
+            <= firstRowLabelMisreads
+    }
+
     /// Whether two labels share a baseline: tiles of one row.
     private static func onSameRow(_ one: TapPoint, _ other: TapPoint) -> Bool {
         abs(one.tapY - other.tapY) <= rowTolerance

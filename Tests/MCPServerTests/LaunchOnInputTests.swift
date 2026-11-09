@@ -8,25 +8,16 @@ import CoreGraphics
 import XCTest
 @testable import mirroir_mcp
 
-/// Accepts every window event and posts nothing, so taps here never reach
-/// the Mac's event stream.
-private struct SilentWindowPoster: WindowEventPosting {
-    func postButton(down: Bool, at point: CGPoint, clickCount: Int, in window: WindowInfo) -> Bool { true }
-    func focusKeys(in window: WindowInfo) -> Bool { true }
-    func pause(microseconds: UInt32) {}
-    var canStampEvents: Bool { true }
-    func stamp(_ event: CGEvent, at point: CGPoint, in window: WindowInfo) {}
-}
-
 final class LaunchOnInputTests: XCTestCase {
 
-    /// A target that is not a running process on the test Mac, with a window
-    /// poster so a tap that goes through needs no activation.
+    /// A target that is not a running process on the test Mac and reports
+    /// itself in front, so a tap that goes through needs no activation; its
+    /// clicks are recorded, so none reaches the Mac's event stream.
     private func makeInput(_ bridge: StubBridge) -> InputSimulation {
         bridge.processRunning = false
-        bridge.frontmost = false
+        bridge.frontmost = true
         return InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
-                               windowPoster: SilentWindowPoster())
+                               clickPoster: RecordingClickPoster(), pointOwner: TargetOwnsEveryPoint())
     }
 
     func testATapOnAStoppedTargetLaunchesItInTheBackgroundFirst() {

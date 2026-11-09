@@ -26,6 +26,9 @@ enum PointCoverageVerdict: Equatable, Sendable {
 /// Pure occlusion check over on-screen window entries in front-to-back order.
 enum PointCoverage {
 
+    /// The layer the window server draws the mouse pointer in.
+    static let cursorLayer = Int(CGWindowLevelForKey(.cursorWindow))
+
     /// Judge a click at `point` (screen coordinates) meant for `targetPID`.
     ///
     /// - Parameters:
@@ -47,8 +50,10 @@ enum PointCoverage {
         guard let targetIndex = entries.firstIndex(where: {
             $0.ownerPID == targetPID && $0.layer >= 0 && $0.bounds.contains(point)
         }) else { return .targetNotUnderPoint }
-        // Only windows stacked in front of the target's own window can take its click.
-        for entry in entries[..<targetIndex] where entry.layer >= 0 && entry.bounds.contains(point) {
+        // Only windows stacked in front of the target's own window can take its
+        // click. The pointer's own window (listed on macOS 27) never takes one.
+        for entry in entries[..<targetIndex]
+        where entry.layer >= 0 && entry.layer != cursorLayer && entry.bounds.contains(point) {
             if entry.layer > 0 && isDisplaySized(entry.bounds, displays: displays) {
                 if isTransientOverlay(entry.ownerPID) {
                     return .transientOverlay(ownerPID: entry.ownerPID)

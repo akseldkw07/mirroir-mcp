@@ -264,9 +264,9 @@ extension MirroirMCP {
         server.registerTool(MCPToolDefinition(
             name: "type_text",
             description: """
-                Type text on the mirrored iPhone. On iPhone Mirroring the keys go \
-                to its window without bringing it to the front; other targets are \
-                activated first. \
+                Type text on the mirrored iPhone. The target is brought to the front \
+                for the keys (iPhone Mirroring forwards keys only while active), then \
+                the previous front app gets the front back. \
                 A text field must be active on the iPhone. \
                 Sends keystrokes through the CGEvent keyboard interface \
                 with automatic keyboard layout translation for non-US layouts. \
@@ -315,8 +315,8 @@ extension MirroirMCP {
             name: "press_key",
             description: """
                 Send a key press to the mirrored iPhone with optional modifiers. \
-                On iPhone Mirroring the key goes to its window without bringing it to the front; \
-                other targets are activated first. \
+                The target is brought to the front for the key, then the previous \
+                front app gets the front back. \
                 Supported keys: return, escape, tab, delete, space, up, down, left, right, \
                 or any single character (a-z, 0-9, etc.) for shortcuts. \
                 Optional modifiers: command, shift, option, control. \

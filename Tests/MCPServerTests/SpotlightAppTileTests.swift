@@ -106,4 +106,13 @@ final class SpotlightAppTileTests: XCTestCase {
         let twice = [el(icon, 262, 290), el("Horloge", 262, 322), el(icon, 80, 186), el("Horloge", 80, 219)]
         XCTAssertEqual(SpotlightAppTile.label(for: "Horloge", in: twice)?.tapY, 219)
     }
+
+    /// Spanish iPhone, 2026-11-08 18:28: no top-hit heading; the field at the top
+    /// shows the query, and the first row is the tile (OCR misread "Relaj")
+    /// beside its app shortcuts.
+    func testATileBesideItsShortcutsHeadsTheFirstRow() {
+        let screen = [el("Reloj", 56, 80), el("Configurar", 120, 158), el("Relaj", 56, 159),
+                      el("Agregar", 184, 159), el("Cronómetro", 248, 159), el("Watch", 90, 269)]
+        XCTAssertTrue(SpotlightAppTile.headsFirstRow("Reloj", in: screen))
+    }
 }
