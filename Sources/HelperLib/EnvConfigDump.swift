@@ -88,6 +88,7 @@ extension EnvConfig {
                 ("tapIconOffset", "\(tapIconOffset)"),
                 ("tapRowTolerance", "\(tapRowTolerance)"),
                 ("tapBottomZoneFraction", "\(tapBottomZoneFraction)"),
+                ("tapTabBarLabelLift", "\(tapTabBarLabelLift)"),
             ]),
             ("Safe Area", [
                 ("safeBottomMarginPt", "\(TimingConstants.safeBottomMarginPt)"),

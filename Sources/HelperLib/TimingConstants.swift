@@ -112,9 +112,19 @@ public enum TimingConstants {
     public static let tapRowTolerance: Double = 10.0
 
     /// Fraction of window height defining the bottom zone.
-    /// Icon rows in this zone always get the upward tap offset, regardless of gap,
-    /// to handle in-app tab bars where content sits close above the tab labels.
+    /// Icon rows in this zone are tab bars: their labels always get the
+    /// `tapTabBarLabelLift` tap point, regardless of gap, because content can
+    /// sit close above the tab labels.
     public static let tapBottomZoneFraction: Double = 0.90
+
+    /// How far above its label's top a tab bar item is tapped, in heights of
+    /// that label: tab icons sit about one label height above their label.
+    /// Measured 2026-11-10 in Clock on iOS 26 (window 292x645): labels 10 pt
+    /// tall with tops at 608, icons at 590-605, the glass bar from 578 to 623,
+    /// so the fixed 30 pt `tapIconOffset` landed on the bar's edge and missed.
+    /// Scaling with the label keeps the tap inside both the floating glass bar
+    /// and the classic full-width bar.
+    public static let tapTabBarLabelLift: Double = 1.0
 
     /// Maximum allowed `maxSpacing / minSpacing` ratio between adjacent
     /// elements in a row before it is rejected as an icon-grid row.

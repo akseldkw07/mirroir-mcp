@@ -112,11 +112,12 @@ extension TapPointCalculatorTests {
 
     // MARK: - Bottom zone (tab bar) tests
 
-    @Test("tab bar gets same 30pt iconOffset via bottom zone")
+    @Test("tab bar labels are lifted by their own height, below the content above")
     func tabBarGetsBottomZoneOffset() {
         // Reddit-style layout: two-column content at y=826, tab bar labels at y=856.
-        // y=856 is in bottom zone (808.2). Bottom zone now uses the same iconOffset
-        // (30pt) as regular icon rows. tapY = 856 - 30 = 826.
+        // y=856 is in bottom zone (808.2), so the labels are lifted by their own
+        // height (14pt) toward their icons: tapY = 856 - 14 = 842, below the
+        // content row that a 30pt lift would land on.
         let elements = [
             element(text: "Left col", tapX: 100, textTopY: 826, textBottomY: 840),
             element(text: "Right col", tapX: 300, textTopY: 826, textBottomY: 840),
@@ -132,11 +133,10 @@ extension TapPointCalculatorTests {
         )
 
         let home = results.first { $0.text == "Home" }!
-        // Bottom zone: iconOffset = 30. tapY = 856 - 30 = 826
-        #expect(home.tapY == 826.0, "Tab bar should get 30pt iconOffset")
+        #expect(home.tapY == 842.0, "Tab bar label should be lifted by its height")
 
         let chat = results.first { $0.text == "Chat" }!
-        #expect(chat.tapY == 826.0, "All tab bar labels should get same offset")
+        #expect(chat.tapY == 842.0, "All tab bar labels should get same offset")
     }
 
     @Test("icon row mid-screen with small gap does not get offset")
@@ -188,10 +188,10 @@ extension TapPointCalculatorTests {
         #expect(classified[1].isInBottomZone, "Bottom row should be in bottom zone")
     }
 
-    @Test("bottom zone with exactly 3 labels gets iconOffset")
+    @Test("bottom zone with exactly 3 labels gets the tab bar lift")
     func bottomZoneMinimumLabels() {
         // Minimum icon row count (3) at the bottom of the screen.
-        // y=860 is in bottom zone (808.2). Uses iconOffset = 30. tapY = 860 - 30 = 830.
+        // y=860 is in bottom zone (808.2). Lifted by the 14pt label height: tapY = 846.
         let elements = [
             element(text: "Tab1", tapX: 100, textTopY: 860, textBottomY: 874),
             element(text: "Tab2", tapX: 205, textTopY: 860, textBottomY: 874),
@@ -202,11 +202,10 @@ extension TapPointCalculatorTests {
             elements: elements, windowWidth: windowWidth, windowHeight: windowHeight
         )
 
-        // y=860 is in bottom zone. offset = 30 (iconOffset). tapY = 860 - 30 = 830.
-        #expect(results[0].tapY == 830.0, "Bottom zone should get 30pt iconOffset")
+        #expect(results[0].tapY == 846.0, "Bottom zone should get the tab bar lift")
     }
 
-    @Test("applyOffsets uses iconOffset for bottom zone")
+    @Test("applyOffsets lifts bottom zone labels by their height")
     func applyOffsetsBottomZone() {
         let elements = [
             element(text: "Home", tapX: 56, textTopY: 856, textBottomY: 870),
@@ -215,14 +214,37 @@ extension TapPointCalculatorTests {
         ]
         let row = TapPointCalculator.Row(elements: elements, bottomY: 870)
         // isInBottomZone=true, small gap — but bottom zone triggers offset regardless.
-        // Uses iconOffset (30pt). tapY = 856 - 30 = 826.
+        // Lifted by the 14pt label height: tapY = 856 - 14 = 842.
         let classified = [TapPointCalculator.ClassifiedRow(
             row: row, isIconRow: true, gap: 30, isInBottomZone: true
         )]
         let points = TapPointCalculator.applyOffsets(classified)
         #expect(points.count == 3)
         for point in points {
-            #expect(point.tapY == 826.0, "\(point.text) should get 30pt iconOffset")
+            #expect(point.tapY == 842.0, "\(point.text) should be lifted by its height")
+        }
+    }
+
+    @Test("iOS 26 glass tab bar labels tap their icon, inside the bar")
+    func glassTabBarTapsInsideTheBar() {
+        // Captured 2026-11-10 from the Clock app (Spanish UI) on iOS 26, window
+        // 292x645. The glass bar spans y 578-623, its icons y 590-605 and its
+        // labels' OCR boxes y 608-618. A 30 pt lift from the label's top lands
+        // at 578, on the bar's edge, and the tap misses.
+        let elements = [
+            element(text: "11'55", tapX: 58, textTopY: 571, textBottomY: 587, bboxWidth: 42),
+            element(text: "Ralej murdial", tapX: 58, textTopY: 609, textBottomY: 619, bboxWidth: 46),
+            element(text: "Alarmas", tapX: 117, textTopY: 609, textBottomY: 619, bboxWidth: 34),
+            element(text: "Cronimetro", tapX: 175, textTopY: 608, textBottomY: 618, bboxWidth: 44),
+        ]
+
+        let results = TapPointCalculator.computeTapPoints(
+            elements: elements, windowWidth: 292, windowHeight: 645
+        )
+
+        for label in ["Ralej murdial", "Alarmas", "Cronimetro"] {
+            let point = results.first { $0.text == label }!
+            #expect((590.0...605.0).contains(point.tapY), "\(label) at \(point.tapY) misses its icon")
         }
     }
 

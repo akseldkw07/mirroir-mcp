@@ -225,6 +225,10 @@ public enum EnvConfig {
         readDouble("tapBottomZoneFraction", default: TimingConstants.tapBottomZoneFraction)
     }
 
+    public static var tapTabBarLabelLift: Double {
+        readDouble("tapTabBarLabelLift", default: TimingConstants.tapTabBarLabelLift)
+    }
+
     public static var tapIconRowMaxSpacingRatio: Double {
         readDouble("tapIconRowMaxSpacingRatio", default: TimingConstants.tapIconRowMaxSpacingRatio)
     }
