@@ -50,16 +50,17 @@ on:
   workflow_dispatch:
 
 # Cancel superseded runs to save the scarce macOS runner slots. Keyed on
-# `head_ref || ref` so a branch push and the pull request for it share one group.
+# `head_ref || ref_name`, the branch name in both a push run and its pull request
+# run, so the two share one group (scripts/ci/concurrency-groups-test.sh).
 # Never on main or a tag: each of those commits keeps its own complete run.
 concurrency:
   # On main every commit keeps its own run: a third push must not replace a queued second one.
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
     # The job takes ~40 min; twice that is a hang, not a slow runner.
     timeout-minutes: 80
     permissions:
@@ -846,7 +847,7 @@ jobs:
   # shipped. Deliberately does NOT install embacle: absence is the test.
   build-without-embacle:
     name: Build without embacle-ffi
-    runs-on: macos-15
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
     permissions:
       contents: read
     steps:

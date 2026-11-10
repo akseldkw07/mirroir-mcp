@@ -39,7 +39,7 @@ on:
 # each of those commits keeps its own complete run.
 concurrency:
   # On main every commit keeps its own run: a third push must not replace a queued second one.
-  group: installers-${{ github.head_ref || github.ref }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  group: installers-${{ github.head_ref || github.ref_name }}${{ github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
@@ -75,7 +75,7 @@ jobs:
     name: Source install (mirroir.sh)
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    runs-on: macos-15
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
     permissions:
       contents: read
     env:
@@ -156,7 +156,7 @@ jobs:
     name: Homebrew install (local formula)
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    runs-on: macos-15
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
     permissions:
       contents: read
     env:
@@ -268,7 +268,7 @@ jobs:
     name: NPX install (npm package)
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    runs-on: macos-15
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.MACOS_VM_RUNNER || 'macos-15' }}
     permissions:
       contents: read
     env:

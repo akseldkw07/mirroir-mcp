@@ -116,6 +116,7 @@ See [Security](docs/security.md) for the full threat model.
 | [YOLO Icon Detection](docs/yolo-models.md) | Recommended YOLO models, CoreML setup, and configuration |
 | [Compiled Skills](docs/compiled-skills.md) | Zero-OCR skill replay |
 | [Testing](docs/testing.md) | FakeMirroring, integration tests, and CI strategy |
+| [Self-hosted CI runner](docs/vm-runner.md) | Run the macOS CI jobs in a throwaway VM on your own Mac |
 | [Web and iOS in one scenario](docs/web-and-ios.md) | How `mirroir-run` hands iOS blocks to `mirroir-mcp`, and how `cross_surface` compares a browser with a phone |
 | [Cross-surface replay](runner/docs/) | `mirroir-run` scenario grammar, `.mirroir/` plan, `SAMPLE.md`, judge profiles, CI |
 | [Troubleshooting](docs/troubleshooting.md) | Debug mode and common issues |
