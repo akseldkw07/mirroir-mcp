@@ -1,7 +1,7 @@
 // Copyright 2026 jfarcand@apache.org
 // Licensed under the Apache License, Version 2.0
 //
-// ABOUTME: Checks that a chord asks for its modifier once and the next key asks for none, on both delivery paths.
+// ABOUTME: Checks that a chord asks for its modifier once and the next key asks for none, on the HID key path.
 // ABOUTME: Uses a recording key poster: nothing reaches the Mac's keyboard.
 
 import CoreGraphics
@@ -13,18 +13,22 @@ import HelperLib
 /// followed by "w" would close a window. These tests pin what each call asks
 /// the key poster for; `KeyStrokePlannerTests` pins that one press releases
 /// what it pressed.
+///
+/// Keys take one path: the target in front, keys through the HID tap (nil
+/// target), even with a window poster, since macOS 27 forwards keys to the
+/// phone only while iPhone Mirroring is the active app (see
+/// `FrontHandbackTests`). Each case runs with and without a window poster.
 final class KeyModifierIsolationTests: XCTestCase {
 
     private let windowPID: pid_t = 777
     private let keycode3: UInt16 = 0x14
     private let keycodeV: UInt16 = 0x09
 
-    /// The window path (keys posted to the target's process) when `window` is
-    /// true, the HID path (target in front, keys through the event tap) otherwise.
+    /// The target in front; `window` adds a window poster, which keys never use.
     private func makeInput(window: Bool, keys: RecordingKeyPoster) -> InputSimulation {
         let bridge = StubBridge()
         bridge.processRunning = false
-        bridge.frontmost = !window
+        bridge.frontmost = true
         bridge.windowInfo = WindowInfo(
             windowID: 4242, position: CGPoint(x: 100, y: 50),
             size: CGSize(width: 410, height: 898), pid: windowPID)
@@ -48,11 +52,10 @@ final class KeyModifierIsolationTests: XCTestCase {
         let w = try plain("w")
         XCTAssertEqual(keys.sequences, [w])
         XCTAssertTrue(w.steps.allSatisfy { $0.flags.isEmpty }, "the next key asks for no modifier")
-        let expectedTarget: pid_t? = window ? windowPID : nil
-        XCTAssertEqual(keys.targets, [expectedTarget, expectedTarget])
+        XCTAssertEqual(keys.targets, [nil, nil], "keys go through the HID tap")
     }
 
-    func testWindowPathAChordDoesNotMarkTheNextKey() throws {
+    func testWithAWindowPosterAChordDoesNotMarkTheNextKey() throws {
         try assertAChordDoesNotMarkTheNextKey(window: true)
     }
 
@@ -80,7 +83,7 @@ final class KeyModifierIsolationTests: XCTestCase {
 
         XCTAssertEqual(keys.keycodes, [CGEventInput.shakeKeycode])
         XCTAssertEqual(keys.flags, [CGEventInput.shakeFlags])
-        XCTAssertEqual(keys.targets, [windowPID])
+        XCTAssertEqual(keys.targets, [nil])
     }
 
     func testAPasteChordDoesNotMarkTheKeyAfterIt() throws {
