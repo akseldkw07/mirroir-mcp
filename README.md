@@ -24,7 +24,7 @@
 </p>
 <p align="center"><em>A real run on a real iPhone, sped up: the agent reads the ETA in Waze, then posts it in Slack.</em></p>
 
-No Developer Mode, no Xcode, no WebDriverAgent, no jailbreak. mirroir-mcp works through macOS iPhone Mirroring, so it reaches any app on your phone, including App Store apps you could never build. It works from any MCP client, with [41 tools](docs/tools.md).
+No Developer Mode, no Xcode, no WebDriverAgent, no jailbreak. mirroir-mcp works through macOS iPhone Mirroring, so it reaches any app on your phone, including App Store apps you could never build. It works from any MCP client, with [43 tools](docs/tools.md).
 
 ## Quick start
 
@@ -106,7 +106,7 @@ See [Security](docs/security.md) for the full threat model.
 |---|---|
 | [Install](docs/install.md) | Every install path, per-client setup, updating, uninstalling |
 | [Onboarding](docs/onboarding.md) | Setup written for the agent: prerequisites, install, doctor, a read-only proof, and an optional first errand |
-| [Tools Reference](docs/tools.md) | All 41 tools, parameters, and input workflows |
+| [Tools Reference](docs/tools.md) | All 43 tools, parameters, and input workflows |
 | [How mirroir sees the screen](docs/screen-intelligence.md) | The observe, reason, act loop; OCR, icon detection, AI vision |
 | [Skills, exploration and CI](docs/skills-and-ci.md) | APP.md, skills, `generate_skill`, `mirroir test`, compiled replay, AI diagnosis, patterns |
 | [`mirroir-run`](docs/mirroir-run.md) | Replay across iPhone, web, HTTP and subprocesses; GitHub Actions; Maestro import |
