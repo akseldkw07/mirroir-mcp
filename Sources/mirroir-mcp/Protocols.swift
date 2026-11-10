@@ -130,8 +130,7 @@ protocol SessionEscapePlugin: Sendable {
 
 /// Abstracts user input simulation (tap, swipe, type, etc.) via CGEvent.
 protocol InputProviding: Sendable {
-    /// Get the target ready for input (e.g. open iPhone Mirroring). Returns nil when ready,
-    /// else why not. For tools that read the window before any input.
+    /// Ready the target for tools that read before any input (open iPhone Mirroring): nil, or why not.
     func prepareTarget(tag: String) -> String?
     func tap(x: Double, y: Double, cursorMode: CursorMode?) -> String?
     func swipe(fromX: Double, fromY: Double, toX: Double, toY: Double,
@@ -213,15 +212,14 @@ protocol KeyEventPosting: Sendable {
     func postKeySequence(_ sequence: CGKeySequence, targetPID: pid_t?) -> Bool
 }
 
-/// Posts the clicks of tap, double tap and long press at a screen point, to
-/// the HID event tap or, when `targetPID` is set, to that one process. They
-/// land in whatever window is under the point, so the target must be in front.
+/// Posts the clicks of tap, double tap and long press at a screen point, to the HID event
+/// tap or, when `targetPID` is set, to that one process. They land in whatever window is
+/// under the point, so the target must be in front. Each returns false when not posted.
 protocol ClickPosting: Sendable {
-    /// Press and lift the primary button. Returns false when it was not posted.
     func click(at point: CGPoint, targetPID: pid_t?) -> Bool
-    /// Two clicks, the second numbered 2. Returns false when it was not posted.
+    /// Two clicks, the second numbered 2.
     func doubleClick(at point: CGPoint, targetPID: pid_t?) -> Bool
-    /// Press, hold for `durationMs`, lift. Returns false when it was not posted.
+    /// Press, hold for `durationMs`, lift.
     func longPress(at point: CGPoint, durationMs: Int, targetPID: pid_t?) -> Bool
 }
 
@@ -491,21 +489,12 @@ protocol HTTPServing: Sendable {
 }
 
 // MARK: - Conformances
-
 extension MirroringBridge: MenuActionCapable {}
-
 extension InputSimulation: InputProviding {}
-
 extension ScreenCapture: ScreenCapturing {}
-
 extension ScreenRecorder: ScreenRecording {}
-
 extension AppleVisionTextRecognizer: TextRecognizing {}
-
 extension CoreMLElementDetector: TextRecognizing {}
-
 extension CompositeTextRecognizer: TextRecognizing {}
-
 extension ScreenDescriber: ScreenDescribing {}
-
 extension VisionScreenDescriber: ScreenDescribing {}
