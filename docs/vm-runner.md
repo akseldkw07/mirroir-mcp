@@ -89,8 +89,18 @@ how `install-guest.sh` provides it (all measured on the first image, 2026-11-09)
 | Homebrew on `PATH` | `brew: command not found` in `setup-embacle` | The guest agent loads `path_helper` and `brew shellenv` |
 | TCC grants (Accessibility, event posting, Input Monitoring, Screen Recording, AppleEvents) | Consent dialogs no one can answer, and the job's typing lands in them | Copied to `Runner.Listener`, which macOS holds responsible for every job process |
 | Screen capture without the window picker | Sequoia's "requesting to bypass the system private window picker" dialog takes focus | Pre-approved, with no expiry, for `bash`, `Runner.Listener`, `mirroir-mcp` and `xctest` |
+| No notification banners | A banner no one dismisses (macOS 15's "See what's new", 2026-11-10) keeps Notification Center's display-sized window up, and every tap is refused with "A notification is showing over 'iphone'" | `quiet-notifications.sh` disables `com.apple.notificationcenterui.agent` |
 
 The base image has SIP disabled, which writing the system TCC database requires.
+
+An image built before `quiet-notifications.sh` existed gets it without a rebuild: boot it
+once, run the script, and shut it down.
+
+```bash
+tart run --no-graphics --dir="setup:$PWD/scripts/ci/vm-runner" mirroir-ci &
+tart exec mirroir-ci bash "/Volumes/My Shared Files/setup/quiet-notifications.sh"
+tart exec mirroir-ci sudo /sbin/shutdown -h now
+```
 
 A dialog in the VM is the usual cause of a FakeMirroring lane that fails with keystrokes
 "not reaching" the target. To see it, screenshot the job's VM while the step runs:
@@ -110,7 +120,7 @@ time and can fail the step it watches, so read the result with that in mind.
 ## Testing
 
 ```bash
-bash scripts/ci/vm-runner/test.sh               # host-loop.sh against stub tart and gh
+bash scripts/ci/vm-runner/test.sh               # host-loop.sh and quiet-notifications.sh against stubs
 bash scripts/ci/vm-runner-routing-test.sh       # every macOS push/PR job is routable
 bash scripts/ci/concurrency-groups-test.sh      # a branch push and its PR share one group
 ```

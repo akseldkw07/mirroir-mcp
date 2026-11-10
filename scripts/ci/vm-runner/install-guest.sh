@@ -95,4 +95,6 @@ for db in "$SYSTEM_TCC" "$USER_TCC"; do
         "$(sudo sqlite3 "$db" "SELECT group_concat(service || coalesce('→' || nullif(indirect_object_identifier, 'UNUSED'), ''), ' ') FROM access WHERE client='$RESPONSIBLE';")"
 done
 
+bash "$SETUP_DIR/quiet-notifications.sh"
+
 echo "runner $RUNNER_VERSION and $AGENT_LABEL installed"
