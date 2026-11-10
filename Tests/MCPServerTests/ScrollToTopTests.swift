@@ -116,7 +116,7 @@ final class ScrollToTopTests: XCTestCase {
     }
 
     func testToolIsRegisteredAndReportsUnverifiedWithoutCapture() {
-        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil))
+        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil), transport: .stdio)
         let capture = StubCapture()
         capture.captureResult = nil
         MirroirMCP.registerScrollToTopTool(
@@ -136,7 +136,7 @@ final class ScrollToTopTests: XCTestCase {
 
     func testToolPreparesTheTargetFirst() {
         // Opening iPhone Mirroring happens in prepareTarget; its error stops the tool.
-        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil))
+        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil), transport: .stdio)
         input.prepareResult = "Couldn't open iPhone Mirroring"
         MirroirMCP.registerScrollToTopTool(
             server: server, registry: makeTestRegistry(bridge: StubBridge(), input: input))

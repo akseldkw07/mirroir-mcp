@@ -216,7 +216,7 @@ final class ReadScrollingListTests: XCTestCase {
     // MARK: - Tool
 
     func testToolReturnsSummaryThenOneImagePerPage() throws {
-        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil))
+        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil), transport: .stdio)
         let capture = StubCapture()
         capture.windowInfo = WindowInfo(windowID: 1, position: .zero,
                                         size: CGSize(width: width, height: height), pid: 1)
@@ -243,7 +243,7 @@ final class ReadScrollingListTests: XCTestCase {
     }
 
     func testToolPreparesTheTargetFirst() {
-        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil))
+        let server = MCPServer(policy: PermissionPolicy(skipPermissions: true, config: nil), transport: .stdio)
         input.prepareResult = "Couldn't open iPhone Mirroring"
         MirroirMCP.registerReadScrollingListTool(
             server: server, registry: makeTestRegistry(bridge: StubBridge(), input: input))

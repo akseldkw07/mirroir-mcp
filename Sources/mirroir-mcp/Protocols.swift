@@ -80,6 +80,12 @@ protocol MirroringSystemProbing: Sendable {
     func processID(bundleID: String) -> pid_t?
     /// Snapshot of the app's AX main window, or nil when it exposes none.
     func mainWindow(pid: pid_t) -> MirroringAXWindow?
+    /// Whether the app has a window minimized to the Dock.
+    func hasMinimizedWindow(pid: pid_t) -> Bool
+    /// Whether the Mac's screen is locked: no window can be read or reached then.
+    func isMacScreenLocked() -> Bool
+    /// Whether the app is hidden (Cmd+H): its window can be read, not reached.
+    func isAppHidden(pid: pid_t) -> Bool
     /// The window server's current window list.
     func windowList() -> [WindowListEntry]
     /// Press the resume control of the paused overlay in the main window of
@@ -124,8 +130,7 @@ protocol SessionEscapePlugin: Sendable {
 
 /// Abstracts user input simulation (tap, swipe, type, etc.) via CGEvent.
 protocol InputProviding: Sendable {
-    /// Get the target ready for input (e.g. open iPhone Mirroring). Returns nil when ready,
-    /// else why not. For tools that read the window before any input.
+    /// Ready the target for tools that read before any input (open iPhone Mirroring): nil, or why not.
     func prepareTarget(tag: String) -> String?
     func tap(x: Double, y: Double, cursorMode: CursorMode?) -> String?
     func swipe(fromX: Double, fromY: Double, toX: Double, toY: Double,
@@ -189,6 +194,13 @@ protocol HeldInputPosting: PointerEngaging {
     func pause(microseconds: UInt32)
 }
 
+/// Reads the text a macOS app reports for one window through its accessibility tree.
+protocol AccessibilityTextReading: Sendable {
+    /// The text nodes of the window `window` names, frames in window-local
+    /// points; or why the tree could not be read.
+    func readText(in window: WindowInfo) -> Result<AccessibilityTextSnapshot, AccessibilityTextUnreadable>
+}
+
 /// Posts the key events of type_text and press_key, to the HID event tap or,
 /// when `targetPID` is set, to that one process.
 protocol KeyEventPosting: Sendable {
@@ -200,15 +212,14 @@ protocol KeyEventPosting: Sendable {
     func postKeySequence(_ sequence: CGKeySequence, targetPID: pid_t?) -> Bool
 }
 
-/// Posts the clicks of tap, double tap and long press at a screen point, to
-/// the HID event tap or, when `targetPID` is set, to that one process. They
-/// land in whatever window is under the point, so the target must be in front.
+/// Posts the clicks of tap, double tap and long press at a screen point, to the HID event
+/// tap or, when `targetPID` is set, to that one process. They land in whatever window is
+/// under the point, so the target must be in front. Each returns false when not posted.
 protocol ClickPosting: Sendable {
-    /// Press and lift the primary button. Returns false when it was not posted.
     func click(at point: CGPoint, targetPID: pid_t?) -> Bool
-    /// Two clicks, the second numbered 2. Returns false when it was not posted.
+    /// Two clicks, the second numbered 2.
     func doubleClick(at point: CGPoint, targetPID: pid_t?) -> Bool
-    /// Press, hold for `durationMs`, lift. Returns false when it was not posted.
+    /// Press, hold for `durationMs`, lift.
     func longPress(at point: CGPoint, durationMs: Int, targetPID: pid_t?) -> Bool
 }
 
@@ -470,22 +481,20 @@ protocol SceneDeciding: Sendable {
     func decide(input: Data, timeoutSeconds: Int) -> SceneDecisionOutcome
 }
 
+/// A listener that hands each HTTP request to a responder; `start` throws `HTTPServerError`.
+protocol HTTPServing: Sendable {
+    func start(responder: HTTPResponder) throws
+    var boundPort: UInt16? { get }
+    func stop()
+}
+
 // MARK: - Conformances
-
 extension MirroringBridge: MenuActionCapable {}
-
 extension InputSimulation: InputProviding {}
-
 extension ScreenCapture: ScreenCapturing {}
-
 extension ScreenRecorder: ScreenRecording {}
-
 extension AppleVisionTextRecognizer: TextRecognizing {}
-
 extension CoreMLElementDetector: TextRecognizing {}
-
 extension CompositeTextRecognizer: TextRecognizing {}
-
 extension ScreenDescriber: ScreenDescribing {}
-
 extension VisionScreenDescriber: ScreenDescribing {}

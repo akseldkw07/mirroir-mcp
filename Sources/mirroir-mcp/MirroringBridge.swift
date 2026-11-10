@@ -7,6 +7,7 @@
 import AppKit
 import ApplicationServices
 import HelperLib
+import os
 
 /// Device orientation based on mirroring window dimensions.
 enum DeviceOrientation: String, Sendable {
@@ -22,11 +23,14 @@ enum DeviceOrientation: String, Sendable {
 }
 
 /// Connection state of a target window (iPhone Mirroring or generic window).
-enum WindowState: Sendable {
+enum WindowState: String, Sendable, Codable {
     case connected
     case paused
     case notRunning
     case noWindow
+    /// The app is running and its window is minimized to the Dock: nothing can
+    /// be read from it or sent to it until someone brings it back.
+    case minimized
 }
 
 /// Backward-compatible alias for code that references the old name.
@@ -56,6 +60,9 @@ final class MirroringBridge: Sendable {
     let targetName: String
     private let bundleIdentifier: String
     private let probe: any MirroringSystemProbing
+    /// Whether the app has been seen running since this server started. Once
+    /// it has, its absence means someone quit it, and a quit is honoured.
+    private let hasBeenRunning = OSAllocatedUnfairLock(initialState: false)
 
     init(targetName: String = "iphone",
          bundleID: String? = nil,
@@ -67,7 +74,15 @@ final class MirroringBridge: Sendable {
 
     /// PID of the iPhone Mirroring process right now, or nil when not running.
     private var processID: pid_t? {
-        probe.processID(bundleID: bundleIdentifier)
+        let pid = probe.processID(bundleID: bundleIdentifier)
+        if pid != nil { hasBeenRunning.withLock { $0 = true } }
+        return pid
+    }
+
+    /// Whether the app ran during this server's life and is gone now: the
+    /// user quit it (or it died), and that is a stop, not a state to repair.
+    var wasQuit: Bool {
+        processID == nil && hasBeenRunning.withLock { $0 }
     }
 
     /// Find the iPhone Mirroring process.
@@ -96,7 +111,11 @@ final class MirroringBridge: Sendable {
     /// Detect the current mirroring connection state.
     func getState() -> MirroringState {
         guard let pid = processID else { return .notRunning }
-        guard let window = probe.mainWindow(pid: pid) else { return .noWindow }
+        guard let window = probe.mainWindow(pid: pid) else {
+            // A minimized window is no longer the app's main window, so it reads
+            // like a closed one unless the window list is asked.
+            return probe.hasMinimizedWindow(pid: pid) ? .minimized : .noWindow
+        }
         return MirroringWindowResolver.state(of: window) {
             let windowID = MirroringWindowResolver.windowInfo(
                 pid: pid, axWindow: window, windowList: probe.windowList())?.windowID ?? 0
@@ -128,19 +147,40 @@ final class MirroringBridge: Sendable {
     }
 
     /// Launch iPhone Mirroring without making it active: the user's front app
-    /// keeps the focus while the session connects.
+    /// keeps the focus while the session connects. Only an app this server
+    /// never saw running is launched: one that was quit stays quit, so that
+    /// quitting iPhone Mirroring stops an agent.
     func launchInBackground() -> Bool {
+        if wasQuit {
+            DebugLog.log("launch", "\(bundleIdentifier) was quit while this server ran; not reopened")
+            return false
+        }
         let accepted = probe.launchInBackground(bundleID: bundleIdentifier)
         DebugLog.log("launch", "background launch of \(bundleIdentifier): \(accepted ? "requested" : "refused")")
         return accepted
     }
 
-    /// What the paused window says and the move that frees it; nil while the
-    /// session is connected or has no window to read.
+    /// What keeps the session from taking input, and the move that frees it:
+    /// what a paused window says, a connected app that is hidden, or an app
+    /// that was quit. Nil while the session accepts input or has no window to read.
     func sessionBlock() -> SessionBlock? {
-        guard getState() == .paused, let pid = processID,
-              let window = probe.mainWindow(pid: pid) else { return nil }
-        return SessionBlockClassifier.block(of: window)
+        guard let pid = processID else {
+            return wasQuit ? SessionBlock(quoted: [], move: .reopenAfterQuit) : nil
+        }
+        let state = getState()
+        // Measured on macOS 26.5: a hidden app still shows live frames, and a
+        // tap or a swipe posted to its window changes nothing on the iPhone.
+        if state == .connected, probe.isAppHidden(pid: pid) {
+            return SessionBlock(quoted: [], move: .showMirroring)
+        }
+        guard state == .paused, let window = probe.mainWindow(pid: pid) else { return nil }
+        let block = SessionBlockClassifier.block(of: window)
+        // A locked Mac makes every window unreadable. Reopening iPhone
+        // Mirroring would not help; unlocking the Mac does.
+        if block.move == .reopenMirroring, probe.isMacScreenLocked() {
+            return SessionBlock(quoted: [], move: .unlockMac)
+        }
+        return block
     }
 
     /// Whether a password or Touch ID prompt shows over the mirroring window.
@@ -233,6 +273,19 @@ final class MirroringBridge: Sendable {
         if !alreadyFront {
             app.activate()
             usleep(EnvConfig.spaceSwitchSettleUs)
+        }
+        // The chord goes to whichever app holds focus. If activation did not
+        // take, another app would get Command and its release, so nothing is
+        // posted. Activation can take longer than the settle, so the front is
+        // watched for as long as a tap waits for it before giving up.
+        var waitedUs: UInt32 = 0
+        while findProcess()?.isActive != true, waitedUs < EnvConfig.activationConfirmTimeoutUs {
+            usleep(EnvConfig.processPollUs)
+            waitedUs += EnvConfig.processPollUs
+        }
+        guard findProcess()?.isActive == true else {
+            DebugLog.log("menu", "shortcut not posted: '\(targetName)' did not come to the front")
+            return false
         }
         return CGEventInput.postKey(keycode: keycode, flags: .maskCommand)
     }
