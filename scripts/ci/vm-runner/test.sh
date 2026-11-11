@@ -116,3 +116,22 @@ else
     echo "FAIL a failed clone fails --once and registers no runner (exit $status)"
     cat "$STUB_LOG" "$WORK/out.log"; exit 1
 fi
+
+# The guest turns Notification Center's banners off for good: a banner no one
+# dismisses (macOS 15's "See what's new") holds a display-sized window over
+# FakeMirroring, and input refuses to click through it.
+cat > "$WORK/bin/launchctl" <<'EOF'
+#!/usr/bin/env bash
+echo "launchctl $*" >> "$STUB_LOG"
+EOF
+chmod 755 "$WORK/bin/launchctl"
+: > "$STUB_LOG"
+if bash "$HERE/quiet-notifications.sh" > "$WORK/out.log" 2>&1; then status=0; else status=$?; fi
+agent="gui/$(id -u)/com.apple.notificationcenterui.agent"
+if (( status == 0 )) && grep -qx "launchctl disable $agent" "$STUB_LOG" \
+    && grep -qx "launchctl bootout $agent" "$STUB_LOG"; then
+    echo "ok   the guest disables and stops Notification Center's banners"
+else
+    echo "FAIL the guest disables and stops Notification Center's banners (exit $status)"
+    cat "$STUB_LOG" "$WORK/out.log"; exit 1
+fi
