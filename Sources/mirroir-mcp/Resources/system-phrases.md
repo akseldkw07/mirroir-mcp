@@ -34,6 +34,7 @@ behind it shows none.
 
 - top hit
 - meilleur résultat
+- mejor resultado
 
 ## Spotlight Open
 

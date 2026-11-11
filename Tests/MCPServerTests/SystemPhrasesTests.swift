@@ -53,6 +53,7 @@ final class SystemPhrasesTests: XCTestCase {
         let phrases = SystemPhrases.live
         XCTAssertEqual(phrases.phrases(.alertDismiss).first, "don't allow", "the most conservative button leads")
         XCTAssertTrue(phrases.phrases(.spotlightTopHit).contains("top hit"))
+        XCTAssertTrue(phrases.phrases(.spotlightTopHit).contains("mejor resultado"), "Spanish iPhone, 2026-11-08")
         XCTAssertTrue(phrases.phrases(.spotlightOpen).contains("ouvrir"))
         XCTAssertTrue(phrases.lockScreen.contains("enter passcode"))
         XCTAssertTrue(phrases.lockScreen.contains("slide to unlock"))
