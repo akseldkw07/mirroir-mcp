@@ -74,7 +74,7 @@ Start recording, open Instagram, scroll the feed and open my profile, stop recor
 
 ## Build your own agent
 
-- **Any MCP client.** Claude Code, Codex, Cursor, VS Code, Claude Desktop and the others connect to the same [42 tools](docs/tools.md). It also installs as a Claude Code plugin, an OpenClaw skill from ClawHub, or a Hermes Agent plugin that asks before every call that can change the phone: see [Install](docs/install.md).
+- **Any MCP client.** Claude Code, Codex, Cursor, VS Code, Claude Desktop and the others connect to the same [44 tools](docs/tools.md). It also installs as a Claude Code plugin, an OpenClaw skill from ClawHub, or a Hermes Agent plugin that asks before every call that can change the phone: see [Install](docs/install.md).
 - **Proven steps in one call.** Once a sequence has worked, [`run_steps`](docs/tools.md#tool-list) replays it in one call (`"tap: <text on screen>"`, `"type: calculator"`, `"wait_for: Get"`). Every step is checked against the permission policy before the first runs, and the run stops at the first failure.
 - **Skills.** Capture a workflow you repeat as a [SKILL.md](docs/skills-and-ci.md#skills): numbered steps the AI follows, matched on screen text, not coordinates. `generate_skill` explores an app and writes them for you. Ready-made skills live in [mirroir-skills](https://github.com/jfarcand/mirroir-skills); the format is in [Skills Marketplace](docs/skills-marketplace.md).
 - **Agents keep notes.** `save_note` keeps one line per lesson per app, and `get_notes` gives it to the next session.

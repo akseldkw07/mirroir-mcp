@@ -45,25 +45,34 @@ final class HomeScreenLaunchTests: XCTestCase {
 
     private func launch(
         name: String, home: @escaping (_ tapped: Bool) -> [TapPoint]
-    ) -> (error: String?, bridge: StubBridge, poster: RecordingWindowPoster) {
+    ) -> (error: String?, bridge: StubBridge, clicks: RecordingClickPoster) {
         let bridge = StubBridge()
-        bridge.frontmost = false
+        // A tap is a HID click, which needs the target in front: the stub reports
+        // the activation as done.
+        bridge.frontmost = true
         bridge.windowInfo = WindowInfo(
             windowID: 4242, position: CGPoint(x: 100, y: 50),
             size: CGSize(width: 410, height: 898), pid: 777)
-        let poster = RecordingWindowPoster()
+        let clicks = RecordingClickPoster()
         let describer = FollowingDescriber()
         let idle = idleSpotlight
         let front = clock
         describer.screen = {
             let items = bridge.menuActionCalls.map(\.item)
-            if items.contains("Home Screen") { return home(!poster.buttons.isEmpty) }
+            if items.contains("Home Screen") { return home(!clicks.clicks.isEmpty) }
             return items.count % 2 == 1 ? idle : front
         }
         let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
                                     pasteVerifier: describer, keyPoster: RecordingKeyPoster(),
-                                    windowPoster: poster)
-        return (input.launchApp(name: name), bridge, poster)
+                                    clickPoster: clicks, pointOwner: TargetOwnsEveryPoint(pid: 777),
+                                    windowPoster: RecordingWindowPoster(), macFront: inertMac)
+        return (input.launchApp(name: name), bridge, clicks)
+    }
+
+    /// A Mac with no front owner: the key calls' handback has nothing to return,
+    /// and no real window is brought forward.
+    private var inertMac: MacFront {
+        MacFront(ownerPID: { nil }, bringForward: { _ in }, pointer: { nil }, movePointer: { _ in })
     }
 
     func testANameSpotlightIgnoresIsOpenedFromItsHomeScreenIcon() {
@@ -73,7 +82,8 @@ final class HomeScreenLaunchTests: XCTestCase {
         XCTAssertNil(run.error, run.error ?? "")
         XCTAssertEqual(run.bridge.menuActionCalls.map(\.item), ["Spotlight", "Home Screen"],
                        "Spotlight opened, then Home, which closes it: the toggle is not pressed again")
-        XCTAssertEqual(run.poster.buttons.first?.point, CGPoint(x: 165, y: 160), "the Rappels label's tap point")
+        XCTAssertEqual(run.clicks.clicks.first?.point, CGPoint(x: 100 + 165, y: 50 + 160),
+                       "the Rappels label's tap point on screen (the window sits at 100, 50)")
     }
 
     func testAHomeScreenThatNeverShowsFailsWithTheSpotlightOnceExplanation() {
@@ -85,7 +95,7 @@ final class HomeScreenLaunchTests: XCTestCase {
         XCTAssertTrue(error.contains("can take typing only once"), error)
         XCTAssertFalse(error.contains("quit"), "the old remedy, quitting iPhone Mirroring, is gone")
         XCTAssertFalse(error.contains(AgentInstruction.waitForUser), "no stop instruction")
-        XCTAssertTrue(run.poster.buttons.isEmpty, "nothing was tapped")
+        XCTAssertTrue(run.clicks.clicks.isEmpty, "nothing was tapped")
         XCTAssertEqual(run.bridge.menuActionCalls.map(\.item), ["Spotlight", "Home Screen"])
     }
 
@@ -98,7 +108,7 @@ final class HomeScreenLaunchTests: XCTestCase {
         XCTAssertTrue(error.contains("no icon is labeled exactly 'Calendrier' on the Home Screen page that shows"),
                       error)
         XCTAssertTrue(error.contains("Other pages are not turned to"), error)
-        XCTAssertTrue(run.poster.buttons.isEmpty, "no icon was tapped")
+        XCTAssertTrue(run.clicks.clicks.isEmpty, "no icon was tapped")
         XCTAssertEqual(run.bridge.menuActionCalls.map(\.item), ["Spotlight", "Home Screen"],
                        "Home is pressed once and the phone stays there")
     }
@@ -109,6 +119,6 @@ final class HomeScreenLaunchTests: XCTestCase {
         let run = launch(name: "Rappels") { _ in page }
         XCTAssertEqual(run.error, InputSimulation.spotlightIgnoredTyping(
             name: "Rappels", homeFailure: "the 'Rappels' icon was tapped but the Home Screen still shows"))
-        XCTAssertEqual(run.poster.buttons.count, 2, "one click: down and up")
+        XCTAssertEqual(run.clicks.clicks.count, 1, "one click")
     }
 }
