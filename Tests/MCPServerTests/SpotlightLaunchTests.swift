@@ -1,7 +1,7 @@
 // Copyright 2026 jfarcand@apache.org
 // Licensed under the Apache License, Version 2.0
 //
-// ABOUTME: Tests how launch_app opens Spotlight and taps an app tile it already shows.
+// ABOUTME: Tests how launch_app opens Spotlight and taps the app's tile, the one it already shows or the typed top hit.
 // ABOUTME: The menu item toggles Spotlight, so it is pressed only while Spotlight is closed.
 
 import CoreGraphics
@@ -33,10 +33,14 @@ final class SpotlightLaunchTests: XCTestCase {
         screen([el("00:00,00", 213, 303), el("Chronomètre", 267, 857), el("Minuteurs", 370, 856)])
     }
 
+    /// Run launch_app over `screens`, read in order; once a tap is posted,
+    /// every read returns `afterTap` when given (the app that opened).
     private func launch(
         name: String = "Horloge", screens: [ScreenDescriber.DescribeResult],
-        clicks: RecordingClickPoster = RecordingClickPoster()
-    ) -> (error: String?, bridge: StubBridge, keys: RecordingKeyPoster) {
+        clicks: RecordingClickPoster = RecordingClickPoster(),
+        afterTap: ScreenDescriber.DescribeResult? = nil
+    ) -> (error: String?, bridge: StubBridge, clicks: RecordingClickPoster, keys: RecordingKeyPoster,
+          describer: StubDescriber) {
         // Typing takes the front (iPhone Mirroring forwards keys only while it is
         // active), so the stub reports the activation as done.
         let bridge = StubBridge()
@@ -48,11 +52,12 @@ final class SpotlightLaunchTests: XCTestCase {
         describer.describeResults = screens
         let poster = RecordingWindowPoster()
         let keys = RecordingKeyPoster()
+        let reader = TapFollowingDescriber(base: describer, clicks: clicks, afterTap: afterTap)
         let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
-                                    pasteVerifier: describer, keyPoster: keys, clickPoster: clicks,
+                                    pasteVerifier: reader, keyPoster: keys, clickPoster: clicks,
                                     pointOwner: TargetOwnsEveryPoint(pid: 777),
                                     windowPoster: poster, macFront: inertMac)
-        return (input.launchApp(name: name), bridge, keys)
+        return (input.launchApp(name: name), bridge, clicks, keys, describer)
     }
 
     /// A Mac with no front owner: the key calls' handback has nothing to return,
@@ -93,16 +98,32 @@ final class SpotlightLaunchTests: XCTestCase {
 
     private static let returnKey = UInt16(36)
 
-    func testAnAppTopHitIsLaunchedWithReturn() {
-        let run = launch(name: "Notes", screens: [clock, idleSpotlight, typedInstalled])
+    /// carnet#60: on iOS 26 Return can do nothing in Spotlight, while taps land.
+    func testAnAppTopHitIsOpenedByTappingItsTileNotWithReturn() {
+        let run = launch(name: "Notes", screens: [clock, idleSpotlight, typedInstalled], afterTap: clock)
+        XCTAssertNil(run.error)
+        XCTAssertTrue(run.keys.keycodes.isEmpty, "Return is not pressed")
+        // A HID click, at the icon's screen point (the window sits at 100, 50).
+        XCTAssertEqual(run.clicks.clicks.first?.point,
+                       CGPoint(x: 100 + 79, y: 50 + 219 - SpotlightAppTile.iconTapLift))
+    }
+
+    /// A top hit that is an app without a tile read (the field says it opens)
+    /// is still opened with Return.
+    func testAnAppTopHitWithoutATileIsLaunchedWithReturn() {
+        let fieldOnly = screen([
+            el("Meilleur résultat", 86, 107), el("Notes", 79, 219), el("Notes - Ouvrir", 137, 873),
+        ])
+        let run = launch(name: "Notes", screens: [clock, idleSpotlight, fieldOnly])
         XCTAssertNil(run.error)
         XCTAssertEqual(run.keys.keycodes, [Self.returnKey])
+        XCTAssertTrue(run.clicks.clicks.isEmpty)
     }
 
     func testAnIdleSuggestionTileIsTypedOverNotTapped() {
-        let clicks = RecordingClickPoster()
-        _ = launch(name: "Notes", screens: [clock, idleSpotlight, typedInstalled], clicks: clicks)
-        XCTAssertTrue(clicks.clicks.isEmpty, "the idle page takes typing; its tiles are not needed")
+        let run = launch(name: "Notes", screens: [clock, idleSpotlight, typedInstalled], afterTap: clock)
+        XCTAssertEqual(run.clicks.clicks.first?.point.x, 100 + 79,
+                       "the typed top hit is tapped, not the idle page's suggestion at x 170")
     }
 
     func testAnAppThatIsNotInstalledFailsWithoutReturn() {
@@ -121,10 +142,10 @@ final class SpotlightLaunchTests: XCTestCase {
         let held = screen([
             el("Suggestions", 72, 108), el("Rechercher dans les apps", 119, 555), el("Keynote", 107, 872),
         ])
-        let run = launch(name: "Notes", screens: [held, held, typedInstalled])
+        let run = launch(name: "Notes", screens: [held, held, typedInstalled], afterTap: clock)
         XCTAssertNil(run.error)
         XCTAssertTrue(run.bridge.menuActionCalls.isEmpty, "pressing the menu item would close Spotlight")
-        XCTAssertEqual(run.keys.keycodes, [UInt16(0), Self.returnKey], "Cmd+A, then Return")
+        XCTAssertEqual(run.keys.keycodes, [UInt16(0)], "Cmd+A, then the tile is tapped")
     }
 
     /// 18:35 on an XR: Spotlight holding "Photos" has an "App Store" section
@@ -152,6 +173,16 @@ final class SpotlightLaunchTests: XCTestCase {
         XCTAssertEqual(run.bridge.menuActionCalls.map(\.item), ["Spotlight"])
     }
 
+    /// carnet#70, 16:47:01 on an XR: right after press_home, the screen read
+    /// before opening Spotlight decided it was already open. That read waits for
+    /// a settled frame; the polls after it do not.
+    func testTheScreenBeforeOpeningIsReadSettled() {
+        let run = launch(screens: [clock, heldSpotlight, clock])
+        XCTAssertEqual(run.describer.settleTimeouts.first, EnvConfig.frameSettleTimeoutUs)
+        XCTAssertGreaterThan(EnvConfig.frameSettleTimeoutUs, 0)
+        XCTAssertEqual(run.describer.settleTimeouts.dropFirst().first, 0, "the polls read the first frame")
+    }
+
     /// A HID click, at the icon's screen point (the window sits at 100, 50).
     func testTheTileIsTappedInsideItsIconNotOnItsLabel() {
         let clicks = RecordingClickPoster()
@@ -159,5 +190,24 @@ final class SpotlightLaunchTests: XCTestCase {
         let tapped = clicks.clicks.first?.point
         XCTAssertEqual(tapped?.x, 100 + 80)
         XCTAssertEqual(tapped?.y, 50 + 219 - SpotlightAppTile.iconTapLift)
+    }
+}
+
+/// Reads `base` in order until a tap is posted, then `afterTap` when given:
+/// the screen after a tile tap is the app, however many reads came before.
+private final class TapFollowingDescriber: ScreenDescribing, @unchecked Sendable {
+    let base: StubDescriber
+    let clicks: RecordingClickPoster
+    let afterTap: ScreenDescriber.DescribeResult?
+
+    init(base: StubDescriber, clicks: RecordingClickPoster, afterTap: ScreenDescriber.DescribeResult?) {
+        self.base = base
+        self.clicks = clicks
+        self.afterTap = afterTap
+    }
+
+    func describe(settleTimeoutUs: UInt32?) -> ScreenDescriber.DescribeResult? {
+        if let afterTap, !clicks.clicks.isEmpty { return afterTap }
+        return base.describe(settleTimeoutUs: settleTimeoutUs)
     }
 }
