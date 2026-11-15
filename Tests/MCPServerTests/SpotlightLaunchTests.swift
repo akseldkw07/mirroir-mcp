@@ -68,6 +68,7 @@ final class SpotlightLaunchTests: XCTestCase {
         let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
                                     pasteVerifier: reader, keyPoster: keys, clickPoster: clicks,
                                     pointOwner: TargetOwnsEveryPoint(pid: 777),
+                                    pasteboard: RecordingPasteboard(contents: nil),
                                     windowPoster: poster, macFront: inertMac)
         return (input.launchApp(name: name), bridge, clicks, keys, describer)
     }
@@ -203,6 +204,63 @@ final class SpotlightLaunchTests: XCTestCase {
         XCTAssertEqual(tapped?.x, 100 + 80)
         XCTAssertEqual(tapped?.y, 50 + 219 - SpotlightAppTile.iconTapLift)
     }
+
+    /// carnet#60: Spotlight that takes no keys at all is not pasted into, so
+    /// Universal Clipboard never hands another Mac's clipboard to the iPhone.
+    func testTypingThatChangesNothingIsNotFollowedByAPaste() {
+        let bridge = StubBridge()
+        bridge.frontmost = true
+        bridge.windowInfo = WindowInfo(
+            windowID: 4242, position: CGPoint(x: 100, y: 50),
+            size: CGSize(width: 410, height: 898), pid: 777)
+        let poster = RecordingWindowPoster()
+        let pasteboard = RecordingPasteboard(contents: "kept")
+        let (front, idle) = (clock, idleSpotlight)
+        let reader = ClosureDescriber {
+            bridge.menuActionCalls.map(\.item).contains("Spotlight")
+                && !bridge.menuActionCalls.map(\.item).contains("Home Screen") ? idle : front
+        }
+        let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+                                    pasteVerifier: reader, keyPoster: RecordingKeyPoster(),
+                                    clickPoster: RecordingClickPoster(), pasteboard: pasteboard,
+                                    pointOwner: TargetOwnsEveryPoint(pid: 777),
+                                    windowPoster: poster, macFront: inertMac)
+        XCTAssertNotNil(input.launchApp(name: "Rappels"))
+        XCTAssertTrue(pasteboard.writes.isEmpty, "nothing went through the clipboard")
+    }
+
+    /// carnet#33: a non-Latin keyboard composes the typed name into its own
+    /// script (Korean 2-set turns "Notes" into Hangul), so Spotlight never shows
+    /// it. The query is selected and the name pasted verbatim, which lands.
+    func testATypedNameThatComesOutAsOtherTextIsPastedVerbatim() {
+        let bridge = StubBridge()
+        bridge.frontmost = true
+        bridge.windowInfo = WindowInfo(
+            windowID: 4242, position: CGPoint(x: 100, y: 50),
+            size: CGSize(width: 410, height: 898), pid: 777)
+        let poster = RecordingWindowPoster()
+        let keys = RecordingKeyPoster()
+        let pasteboard = RecordingPasteboard(contents: "kept")
+        let garbled = screen([el("Suggestions", 72, 108), el("Q ㅜㅐㅅㄷㄴ", 107, 872)])
+        let (front, idle, typed) = (clock, idleSpotlight, typedInstalled)
+        let clicks = RecordingClickPoster()
+        let reader = ClosureDescriber {
+            if !clicks.clicks.isEmpty { return front }
+            if pasteboard.writes.contains("Notes") { return typed }
+            if !keys.sequences.isEmpty { return garbled }
+            return bridge.menuActionCalls.isEmpty ? front : idle
+        }
+        let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+                                    pasteVerifier: reader, keyPoster: keys, clickPoster: clicks,
+                                    pasteboard: pasteboard, pointOwner: TargetOwnsEveryPoint(pid: 777),
+                                    windowPoster: poster, macFront: inertMac)
+        XCTAssertNil(input.launchApp(name: "Notes"))
+        XCTAssertEqual(pasteboard.writes.first, "Notes", "the name went through the clipboard verbatim")
+        XCTAssertEqual(pasteboard.contents, "kept", "the pasteboard is restored after the paste")
+        XCTAssertEqual(clicks.clicks.first?.point,
+                       CGPoint(x: 100 + 79, y: 50 + 219 - SpotlightAppTile.iconTapLift),
+                       "the pasted query's top-hit tile is tapped (a HID click, at its screen point)")
+    }
 }
 
 /// Reads `base` in order until a tap is posted, then `afterTap` when given:
@@ -222,4 +280,16 @@ private final class TapFollowingDescriber: ScreenDescribing, @unchecked Sendable
         if let afterTap, !clicks.clicks.isEmpty { return afterTap }
         return base.describe(settleTimeoutUs: settleTimeoutUs)
     }
+
+}
+
+/// Answers every read with what `screen` returns given the actions so far.
+private final class ClosureDescriber: ScreenDescribing, @unchecked Sendable {
+    let screen: () -> ScreenDescriber.DescribeResult
+
+    init(_ screen: @escaping () -> ScreenDescriber.DescribeResult) {
+        self.screen = screen
+    }
+
+    func describe(settleTimeoutUs: UInt32?) -> ScreenDescriber.DescribeResult? { screen() }
 }
