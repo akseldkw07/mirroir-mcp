@@ -67,8 +67,8 @@ final class SpotlightLaunchTests: XCTestCase {
         let reader = TapFollowingDescriber(base: describer, clicks: clicks, afterTap: afterTap)
         let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
                                     pasteVerifier: reader, keyPoster: keys, clickPoster: clicks,
-                                    pointOwner: TargetOwnsEveryPoint(pid: 777),
                                     pasteboard: RecordingPasteboard(contents: nil),
+                                    pointOwner: TargetOwnsEveryPoint(pid: 777),
                                     windowPoster: poster, macFront: inertMac)
         return (input.launchApp(name: name), bridge, clicks, keys, describer)
     }
