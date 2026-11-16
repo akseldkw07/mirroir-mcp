@@ -215,7 +215,7 @@ extension InputSimulation {
 
     /// The Spotlight screen once its top result is an app, polling for up to
     /// `pasteVerifyTimeoutUs`, because results fill in after the typed text
-    /// shows. Nil when no app becomes the top result.
+    /// shows. Nil when no app named `name` becomes the top result.
     private func appTopHitScreen(name: String) -> [TapPoint]? {
         let poll = max(1, EnvConfig.pasteVerifyPollUs)
         let attempts = max(1, Int(EnvConfig.pasteVerifyTimeoutUs / poll))

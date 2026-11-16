@@ -49,20 +49,45 @@ enum SpotlightDetector {
         }
     }
 
+    /// The whole label of the button an App Store result shows for an app that
+    /// is not installed ("Obtenir"). Pattern data: `## Spotlight Store Button`
+    /// in `system-phrases.md`.
+    static var storeButtonLabels: [String] { SystemPhrases.live.phrases(.spotlightStoreButton) }
+
+    /// Widest vertical gap, in points, between a store result's name and its
+    /// button (20pt measured on an XR).
+    static let storeButtonReach = 40.0
+
     /// Whether Return would open an app, not a web suggestion, an App Store page
     /// or a message: Spotlight has a top result, and either the search field says
     /// it opens it, or the result is a tile. Spotlight does not always show the
     /// heading (Spanish iPhone, 2026-11-08: field at the top, the top result's
     /// tile and shortcuts, no heading), so a field that says it opens `name`
-    /// counts on its own. Looks at the screen before Return because nothing
-    /// afterwards names the app in front.
+    /// counts on its own. Neither counts when the first result named `name` is
+    /// an App Store card: the field says it opens that card too. Looks at the
+    /// screen before Return because nothing afterwards names the app in front.
     static func returnOpensApp(elements: [TapPoint], name: String) -> Bool {
+        if firstResultIsStoreCard(elements: elements, name: name) { return false }
         guard holdsQuery(elements: elements) else {
             return elements.contains { fieldOpens($0, name: name) }
                 || SpotlightAppTile.headsFirstRow(name, in: elements)
         }
         return elements.contains { fieldOpens($0, name: nil) }
             || SpotlightAppTile.topHit(in: elements) != nil
+    }
+
+    /// Whether the highest result whose text is `name` has a store button on its
+    /// row: the App Store's card for an app that is not installed. The field's
+    /// own text ("OpenTable — Ouvrir") never reads as `name` alone.
+    static func firstResultIsStoreCard(elements: [TapPoint], name: String) -> Bool {
+        let target = normalize(name)
+        guard !target.isEmpty,
+              let result = elements.filter({ normalize($0.text) == target }).min(by: { $0.tapY < $1.tapY })
+        else { return false }
+        return elements.contains { element in
+            storeButtonLabels.contains(SystemPhrases.fold(element.text.trimmingCharacters(in: .whitespaces)))
+                && abs(element.tapY - result.tapY) <= storeButtonReach
+        }
     }
 
     /// Whether `element` reads as the field's completion: the query, a dash, then
