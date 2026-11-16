@@ -51,7 +51,8 @@ extension MirroirMCP {
 
     static func registerInputTools(
         server: MCPServer,
-        registry: TargetRegistry
+        registry: TargetRegistry,
+        policy: PermissionPolicy
     ) {
         // swipe — drag gesture on the mirrored iPhone
         server.registerTool(MCPToolDefinition(
@@ -381,6 +382,10 @@ extension MirroirMCP {
                 case .invalid(let msg): return .error(msg)
                 }
 
+                if let refusal = BlockedAppTapGuard.refusal(
+                    at: CGPoint(x: x, y: y), ctx: ctx, policy: policy) {
+                    return .error(refusal)
+                }
                 if let error = input.longPress(x: x, y: y, durationMs: duration,
                                                cursorMode: cursorMode) {
                     return .error(error)
@@ -430,6 +435,10 @@ extension MirroirMCP {
                 case .invalid(let msg): return .error(msg)
                 }
 
+                if let refusal = BlockedAppTapGuard.refusal(
+                    at: CGPoint(x: x, y: y), ctx: ctx, policy: policy) {
+                    return .error(refusal)
+                }
                 if let error = input.doubleTap(x: x, y: y, cursorMode: cursorMode) {
                     return .error(error)
                 }
