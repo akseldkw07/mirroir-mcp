@@ -67,7 +67,7 @@ final class AutoOpenMirroringTests: XCTestCase {
         let clicks = clicks!
         let recovery = MirroringRecovery(launcher: launcher, launchTimeoutUs: 50_000,
                                          click: { clicks.record($0) })
-        return InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY, pasteVerifier: describer,
+        return InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY, pasteVerifier: describer,
                                pointOwner: TargetOwnsEveryPoint(), recovery: recovery)
     }
 

@@ -65,7 +65,7 @@ final class SpotlightLaunchTests: XCTestCase {
         let poster = RecordingWindowPoster()
         let keys = RecordingKeyPoster()
         let reader = TapFollowingDescriber(base: describer, clicks: clicks, afterTap: afterTap)
-        let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+        let input = InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY,
                                     pasteVerifier: reader, keyPoster: keys, clickPoster: clicks,
                                     pasteboard: RecordingPasteboard(contents: nil),
                                     pointOwner: TargetOwnsEveryPoint(pid: 777),
@@ -240,7 +240,7 @@ final class SpotlightLaunchTests: XCTestCase {
             bridge.menuActionCalls.map(\.item).contains("Spotlight")
                 && !bridge.menuActionCalls.map(\.item).contains("Home Screen") ? idle : front
         }
-        let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+        let input = InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY,
                                     pasteVerifier: reader, keyPoster: RecordingKeyPoster(),
                                     clickPoster: RecordingClickPoster(), pasteboard: pasteboard,
                                     pointOwner: TargetOwnsEveryPoint(pid: 777),
@@ -270,7 +270,7 @@ final class SpotlightLaunchTests: XCTestCase {
             if !keys.sequences.isEmpty { return garbled }
             return bridge.menuActionCalls.isEmpty ? front : idle
         }
-        let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+        let input = InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY,
                                     pasteVerifier: reader, keyPoster: keys, clickPoster: clicks,
                                     pasteboard: pasteboard, pointOwner: TargetOwnsEveryPoint(pid: 777),
                                     windowPoster: poster, macFront: inertMac)

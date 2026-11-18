@@ -46,7 +46,7 @@ final class CoverGuardTests: XCTestCase {
     override func setUp() {
         super.setUp()
         owner = StubPointOwner()
-        input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY,
+        input = InputSimulation(bridge: StubBridge(), keyboardLayouts: .usQWERTY,
                                 pointOwner: owner)
     }
 

@@ -28,7 +28,7 @@ final class LaunchOnInputTests: XCTestCase {
     private func makeInput(_ bridge: StubBridge) -> InputSimulation {
         bridge.processRunning = false
         bridge.frontmost = true
-        return InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+        return InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY,
                                clickPoster: RecordingClickPoster(), pointOwner: TargetOwnsEveryPoint())
     }
 

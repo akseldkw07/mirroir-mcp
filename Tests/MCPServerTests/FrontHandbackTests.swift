@@ -79,14 +79,14 @@ final class FrontHandbackTests: XCTestCase {
     /// A desktop target is meant to be in front, so it borrows nothing.
     func testATargetWithNoWindowPosterKeepsTheFront() {
         let mac = ScriptedMac(owners: [iTerm, mirror])
-        let input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY, macFront: mac.front)
+        let input = InputSimulation(bridge: StubBridge(), keyboardLayouts: .usQWERTY, macFront: mac.front)
         input.beginFrontHandback().finish(targetPID: mirror)
         XCTAssertTrue(mac.broughtForward.isEmpty)
     }
 
     func testAMirrorTargetRemembersTheFront() {
         let mac = ScriptedMac(owners: [])
-        let input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY,
+        let input = InputSimulation(bridge: StubBridge(), keyboardLayouts: .usQWERTY,
                                     windowPoster: RecordingWindowPoster(), macFront: mac.front)
         mac.owners = [iTerm, input.targetPID]
         let handback = input.beginFrontHandback()
@@ -102,7 +102,7 @@ final class FrontHandbackTests: XCTestCase {
         let mac = ScriptedMac(owners: [])
         let poster = RecordingWindowPoster()
         let keys = RecordingKeyPoster()
-        let input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY, keyPoster: keys,
+        let input = InputSimulation(bridge: StubBridge(), keyboardLayouts: .usQWERTY, keyPoster: keys,
                                     windowPoster: poster, macFront: mac.front)
         mac.owners = [iTerm, input.targetPID, iTerm, input.targetPID]
 
