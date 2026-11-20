@@ -30,8 +30,13 @@ import HelperLib
 /// macOS delivers, so it is the default there.
 enum WindowInputPolicy {
 
-    /// The newest macOS major version window records were measured on.
-    static let lastMeasuredMacOSMajor = 26
+    /// The newest macOS major version window input was measured on. Upstream
+    /// has 26. This fork sends only swipes through the window (its taps and
+    /// keys are always HID input), and its swipes were measured landing as
+    /// window events on macOS 27.0 (2026-11-08), so it is 27 here. Upstream saw
+    /// macOS 27.3 drop them (jfarcand/mirroir-mcp#84): `windowInput` off is the
+    /// way out if swipes stop arriving.
+    static let lastMeasuredMacOSMajor = 27
 
     /// The `windowInput` values: `auto` follows the macOS version, `on` and
     /// `off` force one path.

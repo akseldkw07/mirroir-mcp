@@ -203,10 +203,11 @@ enum DoctorCommand {
         )
     }
 
-    /// Which path taps, keys and swipes take to iPhone Mirroring, and why.
+    /// Which path swipes take to iPhone Mirroring, and why. Taps and keys are
+    /// HID input in this fork whatever the path.
     static func checkInputPath(_ decision: WindowInputPolicy.Decision) -> DoctorCheck {
         let path = decision.usesWindow
-            ? "window records (your front app stays in front)"
+            ? "window records for swipes (your front app stays in front; taps and keys are HID input)"
             : "HID input (iPhone Mirroring comes to the front for each action)"
         return DoctorCheck(name: "Input path", status: .passed,
                            detail: "\(path): \(decision.reason)", fixHint: nil)
