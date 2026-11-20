@@ -12,6 +12,14 @@ Found 2026-11-10 on a real iPhone (iOS 26) through iPhone Mirroring on macOS 27;
 - Likely a transient macOS overlay (the autocorrect/capitalization bubble) in the Mirroring
   window's AX tree: `MirroringWindowResolver.state` reads any labeled text as `paused`.
 
+## Status (2026-11-20)
+
+Upstream fixed this in `88b0b68` (carnet#77), which came in with the upstream sync (PR #28):
+it captured the bubble (AX identifier `NSAutocorrectionSuggestion`, the corrected word with a
+close button), and `MirroringWindowResolver.state` now skips it as the Mac's own chrome, with
+tests in `MirroringWindowResolverTests`. That covers the first two steps below. Only the
+recheck on the device is left; move this file to `completed/` once it passes.
+
 ## To do
 
 - Capture the AX tree while the bubble shows (`ax-capture --watch`) and confirm what it is.

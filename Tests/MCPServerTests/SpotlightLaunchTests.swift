@@ -166,7 +166,7 @@ final class SpotlightLaunchTests: XCTestCase {
         let run = launch(name: "OpenTable", screens: [clock, idleSpotlight, fieldFirst, fieldFirst, fieldFirst, storeCard])
         XCTAssertNotNil(run.error)
         XCTAssertTrue(run.keys.keycodes.isEmpty, "Return is never pressed on the store card")
-        XCTAssertTrue(run.poster.buttons.isEmpty)
+        XCTAssertTrue(run.clicks.clicks.isEmpty, "and no HID click lands on it")
     }
 
     /// 14:39 on an XR: a refused launch left Spotlight open, and the next name was
