@@ -1,8 +1,20 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Draws the mirroir robot (website/public/logo-robot.svg) with Core Graphics and writes it as an .icns file.
-// ABOUTME: The icon macOS shows for the serve agent's app bundle in the privacy panes and Background Items.
+// ABOUTME: The icon of mirroir's app bundles in the privacy panes and Background Items, and the Claude extension's PNG.
 
 import CoreGraphics
 import Foundation
@@ -117,6 +129,20 @@ enum ServeAppIcon {
             guard let image = image(pixels: pixels) else { throw WriteError(path: path) }
             CGImageDestinationAddImage(destination, image, nil)
         }
+        guard CGImageDestinationFinalize(destination) else { throw WriteError(path: path) }
+    }
+
+    /// Write the icon as one PNG of `pixels` x `pixels`: the image an MCP
+    /// Bundle manifest names as its `icon`.
+    ///
+    /// - Throws: `WriteError` when the icon cannot be drawn or the file cannot be written.
+    static func writePNG(to path: String, pixels: Int) throws {
+        guard let image = image(pixels: pixels),
+              let destination = CGImageDestinationCreateWithURL(
+                URL(fileURLWithPath: path) as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+            throw WriteError(path: path)
+        }
+        CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { throw WriteError(path: path) }
     }
 }

@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Registers the run_steps MCP tool: several proven skill steps in one call.
 // ABOUTME: Parses the step list and delegates to InlineStepRunner, which checks permissions and runs them.
 
@@ -22,7 +34,8 @@ extension MirroirMCP {
                 (found by OCR, so read it from describe_screen first: it is in the iPhone's \
                 language), "tap: @324,113" \
                 (a point from describe_screen, for controls with no readable text), \
-                "type: calculator", "press_key: return", \
+                "type: calculator", "clear_field" (empties the focused field before \
+                a type), "press_key: return", \
                 "wait_for: Get", "assert_visible: Results", "swipe: up", \
                 "scroll_to: Privacy", "home". Every step must be allowed by the \
                 permission policy, or nothing runs. The run stops at the first \
@@ -57,7 +70,7 @@ extension MirroirMCP {
                     return .error(refusal.message)
                 case .success(let steps):
                     let executor = InlineStepRunner.executor(for: ctx, registry: registry)
-                    let report = InlineStepRunner.run(steps, executor: executor)
+                    let report = InlineStepRunner.run(steps, executor: executor, policy: policy)
                     return report.failed ? .error(report.text) : .text(report.text)
                 }
             }

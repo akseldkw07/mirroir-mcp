@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests the once-a-day update check (version order, the cache, the notice) and the install channel read from a path.
 // ABOUTME: No network: the registry lookup is a closure, the clock a fixed date, and the tools get a fixed notice.
 
@@ -39,6 +51,15 @@ final class UpdateCheckTests: XCTestCase {
                                         store: { _ in XCTFail("a fresh cache is not rewritten") })
         XCTAssertEqual(latest, "0.44.0")
         XCTAssertEqual(fetches, 0)
+    }
+
+    func testARefreshAsksTheRegistryDespiteAFreshCache() {
+        var stored: [UpdateCheck.Cache] = []
+        let cache = UpdateCheck.Cache(checkedAt: now.addingTimeInterval(-3600), latest: "0.50.1")
+        let latest = UpdateCheck.latest(now: now, policy: .refresh, cache: cache, fetch: { "0.50.2" },
+                                        store: { stored.append($0) })
+        XCTAssertEqual(latest, "0.50.2", "doctor must not repeat a release check made before the release")
+        XCTAssertEqual(stored, [UpdateCheck.Cache(checkedAt: now, latest: "0.50.2")])
     }
 
     func testAStaleCacheIsRefreshedAndAFailureIsRemembered() {
@@ -98,7 +119,24 @@ final class UpdateCheckTests: XCTestCase {
     }
 
     func testDoctorWarnsButNeverFailsOnAnOldVersion() {
-        XCTAssertEqual(DoctorCommand.updateCheck(notice: "newer").status, .warned)
-        XCTAssertEqual(DoctorCommand.updateCheck(notice: nil).status, .passed)
+        let behind = UpdateCheck.doctorCheck(enabled: true, latest: "0.50.2", current: "0.50.1")
+        XCTAssertEqual(behind.status, .warned)
+        XCTAssertTrue(behind.detail.contains("0.50.2 is available"))
+        let current = UpdateCheck.doctorCheck(enabled: true, latest: "0.50.1", current: "0.50.1")
+        XCTAssertEqual(current.status, .passed)
+        XCTAssertEqual(current.detail, "0.50.1 (latest release)")
+    }
+
+    func testDoctorDoesNotCallAnUnreachableRegistryCurrent() {
+        let offline = UpdateCheck.doctorCheck(enabled: true, latest: nil, current: "0.50.1")
+        XCTAssertEqual(offline.status, .warned)
+        XCTAssertTrue(offline.detail.contains("could not be reached"))
+        XCTAssertFalse(offline.detail.contains("latest release"))
+    }
+
+    func testDoctorWithTheCheckOffSaysSo() {
+        let off = UpdateCheck.doctorCheck(enabled: false, latest: nil, current: "0.50.1")
+        XCTAssertEqual(off.status, .passed)
+        XCTAssertEqual(off.detail, "0.50.1 (check off)")
     }
 }

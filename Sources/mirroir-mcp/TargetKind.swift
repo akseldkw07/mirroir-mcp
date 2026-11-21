@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Central registry mapping config-type strings to self-contained target builders.
 // ABOUTME: Adding a new target kind (Android via ADB, iOS Simulator, …) = one new *Target.swift file + one line here.
 
@@ -17,12 +29,10 @@ enum TargetKind {
     typealias Builder = @Sendable (_ config: TargetConfig?, _ name: String) -> TargetContext
 
     /// All registered target builders. Keys are the config-type strings accepted
-    /// in `targets.json`. A single target may register multiple aliases (e.g.
-    /// macOS-app has the canonical "macos-app" plus legacy "generic-window").
+    /// in `targets.json`.
     static let builders: [String: Builder] = [
         IPhoneMirroringTarget.configTypeName: IPhoneMirroringTarget.build,
         MacOSAppTarget.configTypeName: MacOSAppTarget.build,
-        MacOSAppTarget.legacyConfigTypeName: MacOSAppTarget.build,
     ]
 
     /// Profile lookup by config-type string. Used by `StrategyDetector` and
@@ -32,14 +42,24 @@ enum TargetKind {
     static let profiles: [String: TargetProfile] = [
         IPhoneMirroringTarget.configTypeName: IPhoneMirroringTarget.profile,
         MacOSAppTarget.configTypeName: MacOSAppTarget.profile,
-        MacOSAppTarget.legacyConfigTypeName: MacOSAppTarget.profile,
     ]
 
-    /// Look up a profile by legacy config-type string. Returns the macOS-app
+    /// Look up a profile by config-type string. Returns the macOS-app
     /// profile for unknown values so call sites can treat the result as
     /// non-optional.
     static func profile(for configType: String) -> TargetProfile {
         profiles[configType] ?? MacOSAppTarget.profile
+    }
+
+    /// Why a `targets.json` entry of `type` is skipped, and the line to change.
+    /// A Mac app's entry once named its type "generic-window"; that entry now
+    /// reads "macos-app" with every other field unchanged.
+    static func unknownTypeMessage(type: String, name: String) -> String {
+        let accepted = builders.keys.sorted().map { "'\($0)'" }.joined(separator: " or ")
+        let change = type == "generic-window"
+            ? "Change its \"type\" to \"\(MacOSAppTarget.configTypeName)\" in targets.json"
+            : "Set its \"type\" to \(accepted) in targets.json"
+        return "target '\(name)' is skipped: its type '\(type)' is unknown. \(change), then restart mirroir-mcp."
     }
 
     /// Build a `TargetContext` from a parsed `TargetConfig`, or `nil` if the

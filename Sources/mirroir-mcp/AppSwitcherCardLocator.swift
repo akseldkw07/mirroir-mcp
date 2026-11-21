@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Locates a specific app's card in iPhone Mirroring's App Switcher by matching its preview text against the foreground app's OCR.
 // ABOUTME: Eliminates the brittleness of hard-coded `appSwitcherCardXFraction` whose correct value depends on how many apps are in the switcher.
 
@@ -80,6 +92,8 @@ enum AppSwitcherCardLocator {
             let key = normalize(el.text)
             return el.tapX >= leftEdge && key.count >= minTextLength && appTexts.contains(key)
         }
+        DebugLog.log("reset_app", "fingerprint matches: "
+            + matches.map { "'\($0.text)'@\(Int($0.tapX))" }.joined(separator: ", "))
         guard !matches.isEmpty else { return nil }
 
         // Cluster by X proximity — one cluster per app card.
@@ -103,6 +117,8 @@ enum AppSwitcherCardLocator {
             }
             .sorted { $0.score > $1.score }
 
+        DebugLog.log("reset_app", "card clusters (score@x): "
+            + scored.map { "\($0.score)@\(Int($0.xs[$0.xs.count / 2]))" }.joined(separator: ", "))
         guard let best = scored.first, best.score >= minClusterScore else { return nil }
         // Fail closed on a near-tie between two cards.
         if scored.count >= 2 {

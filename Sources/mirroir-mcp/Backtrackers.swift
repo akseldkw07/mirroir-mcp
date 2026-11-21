@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Concrete Backtracking implementations: OCR-chevron tap for iPhone Mirroring, keyboard shortcut for macOS apps.
 // ABOUTME: Delegates to ExplorerUtilities.tapBackButton for OCR-based back navigation; wraps pressKey for keyboard shortcuts.
 
@@ -10,14 +22,15 @@ import HelperLib
 
 /// Tap the "<" back chevron detected in the top navigation bar, falling back to
 /// a canonical position in the top-left corner. Used by iPhone Mirroring because
-/// iOS apps do not receive Mac keyboard shortcuts through the Mirroring bridge.
+/// iOS apps do not implement Cmd+[: the key arrives and nothing handles it.
 struct OCRChevronBacktracker: Backtracking {
+    @discardableResult
     func tapBack(
         elements: [TapPoint],
         input: any InputProviding,
         windowSize: CGSize,
         fallback: BackButtonFallback
-    ) -> Bool {
+    ) -> BackOutcome {
         ExplorerUtilities.tapBackButton(
             elements: elements, input: input,
             windowSize: windowSize, fallback: fallback
@@ -41,14 +54,21 @@ struct KeyboardShortcutBacktracker: Backtracking {
     /// Alternative: Escape — dismisses modals, often serves as back in simple apps.
     static let escape = KeyboardShortcutBacktracker(keyName: "escape", modifiers: [])
 
+    /// The shortcut as people write it: "Cmd+[", "escape".
+    var displayName: String {
+        let names = ["command": "Cmd", "shift": "Shift", "option": "Option", "control": "Ctrl"]
+        return (modifiers.map { names[$0] ?? $0 } + [keyName]).joined(separator: "+")
+    }
+
+    @discardableResult
     func tapBack(
         elements: [TapPoint],
         input: any InputProviding,
         windowSize: CGSize,
         fallback: BackButtonFallback
-    ) -> Bool {
+    ) -> BackOutcome {
         let result = input.pressKey(keyName: keyName, modifiers: modifiers)
         usleep(EnvConfig.stepSettlingDelayMs * 1000)
-        return result.error == nil
+        return BackOutcome(action: .shortcut(displayName), error: result.error)
     }
 }

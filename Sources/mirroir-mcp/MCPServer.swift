@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: MCP (Model Context Protocol) server: JSON-RPC 2.0 dispatch, and the stdio loop that feeds it.
 // ABOUTME: Handles initialize, tools/list, and tools/call methods per the MCP specification.
 
@@ -16,6 +28,10 @@ final class MCPServer: Sendable {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
     private let policy: PermissionPolicy
+    /// Reads the screen of the target a tool call names, for the driving check
+    /// (`DrivingGuard`) in front of every input. Nil until tools are registered.
+    private let screenReader = OSAllocatedUnfairLock(
+        initialState: (@Sendable ([String: JSONValue]) -> ScreenDescriber.DescribeResult?)?.none)
     /// Counter for server-initiated request IDs (sampling, etc.).
     let requestCounter = OSAllocatedUnfairLock(initialState: 0)
     /// Capabilities the client declared in its `initialize` handshake, which
@@ -36,6 +52,11 @@ final class MCPServer: Sendable {
 
     func registerTool(_ tool: MCPToolDefinition) {
         tools.withLock { $0[tool.name] = tool }
+    }
+
+    /// Set how the driving check reads the screen of the target a call names.
+    func setScreenReader(_ reader: @escaping @Sendable ([String: JSONValue]) -> ScreenDescriber.DescribeResult?) {
+        screenReader.withLock { $0 = reader }
     }
 
     /// Run the MCP server, reading JSON-RPC from stdin and writing to stdout.
@@ -362,10 +383,20 @@ final class MCPServer: Sendable {
         }
 
         let arguments = request.params?.getArguments() ?? [:]
+        let reader = screenReader.withLock { $0 }
+        if let refusal = DrivingGuard.refusal(tool: toolName, policy: policy, read: { reader?(arguments) }) {
+            DebugLog.log("permission", "driving refused \(toolName)")
+            let result = completeResult([
+                "content": .array([MCPContent.text(refusal).toJSON()]),
+                "isError": .bool(true),
+            ], modern: modern)
+            return JSONRPCResponse(id: request.id, result: result, error: nil)
+        }
         let context = MCPToolCallContext(
             inputResponses: Self.inputResponses(in: request),
             requestState: Self.requestState(in: request))
-        let toolResult = tool.handler(arguments, context)
+        // Synthetic input does not reset the idle timer: keep the screen saver off the mirror.
+        let toolResult = DisplayAwake.shared.during("mirroir-mcp \(toolName)") { tool.handler(arguments, context) }
 
         if !toolResult.inputRequests.isEmpty || toolResult.requestState != nil {
             return inputRequiredResponse(request, toolResult: toolResult, modern: modern)

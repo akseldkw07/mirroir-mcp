@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Self-contained target module for real iPhone control via macOS iPhone Mirroring.
 // ABOUTME: Owns its profile, legacy config-type strings, target-specific guidance, and TargetContext builder.
 
@@ -57,7 +69,8 @@ enum IPhoneMirroringTarget {
 
     /// The input path every entry point that drives the mirror builds (the MCP
     /// target, `test`, `compile` and `record`): taps and keys go to the
-    /// mirror's window by SkyLight record, so the app in front keeps the focus.
+    /// mirror's window by SkyLight record, so the app in front keeps the focus,
+    /// where `WindowInputPolicy` allows it; elsewhere they are HID input.
     ///
     /// The MCP target also passes `recovery` (open the app, press Connect on
     /// its unlock screen) and `focusRestorer` (give focus back after input).
@@ -68,7 +81,7 @@ enum IPhoneMirroringTarget {
         InputSimulation(bridge: bridge, cursorMode: profile.cursorMode,
                         pasteVerifier: pasteVerifier, recovery: recovery,
                         focusRestorer: focusRestorer,
-                        windowPoster: SkyLightWindowPoster.live)
+                        windowPoster: WindowInputPolicy.livePoster)
     }
 
     /// Build a fully-wired TargetContext for iPhone Mirroring.

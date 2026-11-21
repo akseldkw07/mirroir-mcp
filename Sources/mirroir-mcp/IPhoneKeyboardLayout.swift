@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: The iPhone's hardware keyboard layout as a character → keystroke table for typing.
 // ABOUTME: US QWERTY uses CGKeyMap; any other layout is read from macOS's copy of it via LayoutMapper.
 
@@ -60,21 +72,10 @@ struct IPhoneKeyboardLayout: Sendable {
         })
     }
 
-    /// The layout `keyboardLayout` (settings.json) or `IPHONE_KEYBOARD_LAYOUT`
-    /// names. A name macOS does not know is reported on stderr and typing
-    /// uses US QWERTY keystrokes.
-    static func configured() -> IPhoneKeyboardLayout {
-        let name = EnvConfig.keyboardLayout
-        guard let layout = named(name) else {
-            fputs("Keyboard layout '\(name)' is not a macOS keyboard layout; "
-                + "typing uses US QWERTY keystrokes. Run `mirroir-mcp configure` "
-                + "to pick the iPhone's layout.\n", stderr)
-            return .usQWERTY
-        }
-        if let sourceID = layout.sourceID {
-            DebugLog.persist("keyboard", "iPhone keyboard layout: \(sourceID)")
-        }
-        return layout
+    /// The character `sequence` types on this layout, or nil when none does.
+    func character(typedBy sequence: CGKeySequence) -> Character? {
+        guard let strokes else { return CGKeyMap.character(typedBy: sequence) }
+        return strokes.first { $0.value == sequence }?.key
     }
 
     /// Keystrokes that type `char` on this layout, or nil when it has none.

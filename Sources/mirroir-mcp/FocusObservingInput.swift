@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Decorator over InputProviding that samples the Mac's focus around every action and records the outcome.
 // ABOUTME: Forwards each call unchanged; only observes whether driving the target stole focus or raised its window.
 
@@ -89,6 +101,10 @@ final class FocusObservingInput: InputProviding, @unchecked Sendable {
         observe(.type) { wrapped.typeText(text) }
     }
 
+    func rememberKeyboardLayout(_ name: String) -> String? {
+        wrapped.rememberKeyboardLayout(name)
+    }
+
     func pressKey(keyName: String, modifiers: [String]) -> TypeResult {
         observe(.key) { wrapped.pressKey(keyName: keyName, modifiers: modifiers) }
     }
@@ -99,6 +115,12 @@ final class FocusObservingInput: InputProviding, @unchecked Sendable {
 
     func openURL(_ url: String) -> String? {
         observe(.openURL) { wrapped.openURL(url) }
+    }
+
+    /// Freeing a paused session clicks the window's own control, not the
+    /// app's content, so it is not observed as a focus-moving action.
+    func ensureConnected(tag: String) -> String? {
+        wrapped.ensureConnected(tag: tag)
     }
 
     func touch(_ command: TouchCommand) -> Result<TouchOutcome, TouchSessionError> {

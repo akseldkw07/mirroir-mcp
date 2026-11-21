@@ -46,11 +46,35 @@ The word the search field adds after the query when Return would open an app
 - abrir
 - öffnen
 
+## Spotlight Store Button
+
+The whole label of the button an App Store result shows when the app is not
+installed. Spotlight can make that result its top hit, with the field still
+saying it opens it ("OpenTable — Ouvrir" over an "Obtenir" card, XR, iOS 26,
+2026-11-15); Return then opens the App Store page.
+
+- get
+- obtenir
+
+## Navigation
+
+Text a turn-by-turn navigation screen shows, a fragment of it. While driving
+mode is on, an input is refused when the phone shows one, since the phone is
+then guiding the drive. `.*` stands for any text between two parts. Read on
+Waze, iOS 27, 2026-11-16: "Re-center" and "14 min • 8.4 km".
+
+- re-center
+- min • .*km
+- min • .*mi
+
 ## Spotlight Overlay
 
 Other text that shows only while Spotlight covers the screen. The top-hit
-headings above count too.
+headings above count too. The search field's placeholder is the only text
+Spotlight adds when it opens as a bare field over the Home Screen (iOS 27,
+2026-11-16).
 
+- rechercher ou demander
 - search in app
 - rechercher dans l'app
 - rechercher dans les apps
@@ -98,3 +122,54 @@ between two parts.
 - rate
 - enjoying
 - allow.*to track
+
+## Settings App
+
+The Settings app's name under its Home Screen icon, which `set_network`
+opens; the first that launches is used.
+
+- settings
+- réglages
+
+## Settings Airplane Row
+
+The label of the Settings row holding the Airplane Mode switch, which
+`set_network` reads and taps for `airplane_on` and `airplane_off`, a fragment
+of it. The Settings Row and Switch sections list a label as it reads on a
+phone in each language; the first one on screen is used.
+
+- airplane
+- mode avion
+
+## Settings Wi-Fi Row
+
+The label of the Settings row that opens the Wi-Fi page for `wifi_on` and
+`wifi_off`.
+
+- wi-fi
+
+## Settings Wi-Fi Switch
+
+The label of the row on the Wi-Fi page holding the Wi-Fi switch. The page
+title often reads the same; the row whose switch is found is used.
+
+- wi-fi
+
+## Settings Cellular Row
+
+The label of the Settings row that opens the cellular page for
+`cellular_on` and `cellular_off`.
+
+- cellular
+- mobile service
+- réseau cellulaire
+
+## Settings Cellular Switch
+
+The label of the row on the cellular page holding the cellular data switch.
+With two SIMs, iOS shows a menu there instead (`Données cellulaires
+Principale >`), which `set_network` refuses rather than guesses.
+
+- cellular data
+- mobile data
+- données cellulaires

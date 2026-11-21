@@ -1,21 +1,30 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Self-contained target module for native macOS apps (Telegram, Claude Desktop, Chrome, etc.).
-// ABOUTME: Owns its profile, legacy config-type strings, and TargetContext builder using GenericWindowBridge.
+// ABOUTME: Owns its profile, config-type string, and TargetContext builder using GenericWindowBridge.
 
 import Foundation
 import HelperLib
 
 /// Self-contained bundle for native macOS app targets. Declares its config-type
-/// names (current "macos-app" and legacy "generic-window"), its profile constant,
-/// and the `build` factory used by the TargetKind registry.
+/// name ("macos-app"), its profile constant, and the `build` factory used by the
+/// TargetKind registry.
 enum MacOSAppTarget {
-    /// Canonical config-type string for new `targets.json` entries.
+    /// Config-type string for a macOS app entry in `targets.json`.
     static let configTypeName = "macos-app"
-    /// Legacy config-type string kept for backward compatibility with existing
-    /// `targets.json` files that predate the self-contained target restructure.
-    static let legacyConfigTypeName = "generic-window"
 
     /// Layout zones for a macOS-app target. Desktop windows have no mobile-style
     /// safe zone; the entire window is tappable. Orientation-invariant.

@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Registers input-related MCP tools: swipe, drag, type_text, press_key, long_press, double_tap, shake (tap is in TapTools).
 // ABOUTME: Each tool maps MCP JSON-RPC calls to the InputSimulation subsystem via CGEvent.
 
@@ -39,7 +51,8 @@ extension MirroirMCP {
 
     static func registerInputTools(
         server: MCPServer,
-        registry: TargetRegistry
+        registry: TargetRegistry,
+        policy: PermissionPolicy
     ) {
         // swipe — drag gesture on the mirrored iPhone
         server.registerTool(MCPToolDefinition(
@@ -51,9 +64,10 @@ extension MirroirMCP {
                 (scroll up), swipe left to reveal content on the right. \
                 Paging surfaces like video feeds snap to the next page only on a \
                 real flick, 2000 points per second or faster: for example 75% of \
-                the screen height in 150 ms. The default 300 ms over a third of the \
-                screen scrolls a list a bounded distance and does not page a feed. \
-                Use a long duration_ms for a slow scroll without inertia. \
+                the screen height in 150 ms. Anything slower is a drag that moves \
+                the content exactly as far as the finger, with no inertia: it runs \
+                at most 140 points per second, so the default 300 ms over a third \
+                of the screen takes about 2 s. \
                 The result says whether the screen moved (diff_ratio below the \
                 status bar); a swipe that moved nothing is retried once.
                 """,
@@ -79,7 +93,7 @@ extension MirroirMCP {
                     "duration_ms": .object([
                         "type": .string("number"),
                         "description": .string(
-                            "Duration of swipe in milliseconds (default: 300)"),
+                            "Duration of swipe in milliseconds (default: 300); a drag below flick speed is slowed to at most 140 points per second"),
                     ]),
                     "cursor_mode": cursorModeSchema,
                 ]),
@@ -217,10 +231,19 @@ extension MirroirMCP {
                 what was not confirmed. Emoji and pictographic symbols cannot \
                 be read back by OCR, so text containing them always returns an \
                 error even when the paste landed — check the screen. Non-Latin \
-                scripts are confirmed only when ocrLanguages includes them. \
+                scripts are confirmed only when OCR reads their language (the \
+                Mac's preferred languages, or ocrLanguages when set). \
                 Typed text is read back from the screen: when iOS autocorrect \
                 rewrote it, the call still succeeds and the result says the \
-                screen does not show what was typed.
+                screen does not show what was typed. When keyboardLayout lists \
+                several layouts (iPhones with different keyboards on one Mac), \
+                characters they type with different keys are pasted, and the \
+                result says so, until keyboard_layout gives the connected \
+                phone's layout. Typing adds to what the \
+                field already holds; pass clear=true to empty a pre-filled \
+                field first (Cmd+A, then Delete). Clear only a text field you \
+                just focused: with no field focused, Cmd+A acts on whatever \
+                the app selects.
                 """,
             inputSchema: [
                 "type": .string("object"),
@@ -228,7 +251,20 @@ extension MirroirMCP {
                     "text": .object([
                         "type": .string("string"),
                         "description": .string("The text to type"),
-                    ])
+                    ]),
+                    "clear": .object([
+                        "type": .string("boolean"),
+                        "description": .string(
+                            "Empty the focused field first (Cmd+A, then Delete). Default false."),
+                    ]),
+                    "keyboard_layout": .object([
+                        "type": .string("string"),
+                        "description": .string(
+                            "The connected iPhone's hardware keyboard layout, one of the "
+                            + "keyboardLayout names in settings. Give it when a result says "
+                            + "characters were pasted because the layouts disagree; it is "
+                            + "remembered for this phone."),
+                    ]),
                 ]),
                 "required": .array([.string("text")]),
             ],
@@ -241,11 +277,19 @@ extension MirroirMCP {
                     return .error("Missing required parameter: text (string)")
                 }
 
-                let result = input.typeText(text)
+                let clear = args["clear"]?.asBool() ?? false
+                if let layout = args["keyboard_layout"]?.asString(),
+                   let refusal = input.rememberKeyboardLayout(layout) {
+                    return .error(refusal)
+                }
+
+                let result = FieldClearing.type(text, clearFirst: clear, using: input)
                 guard result.success else {
                     return .error(result.error ?? "Failed to type text")
                 }
-                let typed = "Typed \(text.count) characters"
+                let typed = clear
+                    ? "Cleared the field, then typed \(text.count) characters"
+                    : "Typed \(text.count) characters"
                 return .text(result.notice.map { "\(typed)\n\n\($0)" } ?? typed)
             }
         ))
@@ -355,6 +399,10 @@ extension MirroirMCP {
                 case .invalid(let msg): return .error(msg)
                 }
 
+                if let refusal = BlockedAppTapGuard.refusal(
+                    at: CGPoint(x: x, y: y), ctx: ctx, policy: policy) {
+                    return .error(refusal)
+                }
                 if let error = input.longPress(x: x, y: y, durationMs: duration,
                                                cursorMode: cursorMode) {
                     return .error(error)
@@ -404,6 +452,10 @@ extension MirroirMCP {
                 case .invalid(let msg): return .error(msg)
                 }
 
+                if let refusal = BlockedAppTapGuard.refusal(
+                    at: CGPoint(x: x, y: y), ctx: ctx, policy: policy) {
+                    return .error(refusal)
+                }
                 if let error = input.doubleTap(x: x, y: y, cursorMode: cursorMode) {
                     return .error(error)
                 }

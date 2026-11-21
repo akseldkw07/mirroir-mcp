@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Apple Vision framework backend for text recognition.
 // ABOUTME: Converts VNRecognizeTextRequest observations into RawTextElements in window-point space.
 
@@ -111,7 +123,7 @@ struct AppleVisionTextRecognizer: Sendable {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = EnvConfig.ocrRecognitionLevel == "fast" ? .fast : .accurate
         request.usesLanguageCorrection = EnvConfig.ocrLanguageCorrection
-        request.recognitionLanguages = EnvConfig.ocrLanguages
+        request.recognitionLanguages = try recognitionLanguages(for: request)
         if cpuOnly {
             pinToCPU(request)
         }
@@ -119,6 +131,19 @@ struct AppleVisionTextRecognizer: Sendable {
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
         return request.results ?? []
+    }
+
+    /// The configured `ocrLanguages`, or the Mac's preferred languages then
+    /// English, each matched to a code `request` supports at its level.
+    private func recognitionLanguages(for request: VNRecognizeTextRequest) throws -> [String] {
+        let requested = EnvConfig.ocrLanguages
+            ?? OCRLanguageResolver.defaultRequest(preferred: Locale.preferredLanguages)
+        let supported = try request.supportedRecognitionLanguages()
+        let unmatched = OCRLanguageResolver.unmatched(requested: requested, supported: supported)
+        if !unmatched.isEmpty {
+            DebugLog.log("OCR", "Vision does not read \(unmatched); requesting the rest")
+        }
+        return OCRLanguageResolver.resolve(requested: requested, supported: supported)
     }
 
     /// Route every stage of `request` to the CPU, where the device offers one.

@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Live MirroringSystemProbing: Launch Services, Accessibility and CGWindowList read per call.
 // ABOUTME: Holds no state, so geometry, state and PID follow rotations, resizes and restarts.
 
@@ -120,18 +132,33 @@ struct LiveMirroringProbe: MirroringSystemProbing {
                        y: geom.position.y + geom.size.height / 2)
     }
 
-    /// The app's AX main window. iPhone Mirroring does not list its window in
-    /// `AXWindows`; it is reachable only as `AXMainWindow`.
+    /// The app's mirroring window. iPhone Mirroring does not always list its
+    /// window in `AXWindows`, so `AXMainWindow` is asked first. When the main
+    /// window is one of the app's own accessory windows (its Settings window,
+    /// open beside the mirror), the mirroring window is looked up in
+    /// `AXWindows` instead: an accessory window's text is not an
+    /// interruption. Nil when only accessory windows are found.
     static func axMainWindow(pid: pid_t) -> AXUIElement? {
         let appRef = AXUIElementCreateApplication(pid)
-        var windowValue: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            appRef, kAXMainWindowAttribute as CFString, &windowValue)
-        guard result == .success, let window = windowValue,
-              CFGetTypeID(window) == AXUIElementGetTypeID()
+        var candidates: [AXUIElement] = []
+        if let main = element(attribute: kAXMainWindowAttribute, of: appRef) { candidates.append(main) }
+        var windowsValue: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+           let windows = windowsValue as? [AXUIElement] {
+            candidates += windows
+        }
+        let identifiers = candidates.map { stringAttribute($0, kAXIdentifierAttribute) }
+        return MirroringWindowResolver.mirrorWindowIndex(identifiers: identifiers).map { candidates[$0] }
+    }
+
+    /// The AX element `attribute` of `element` holds, or nil.
+    private static func element(attribute: String, of element: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard result == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID()
         else { return nil }
         // Safe cast: the CFTypeID check above confirms the type.
-        return unsafeDowncast(window, to: AXUIElement.self)
+        return unsafeDowncast(value, to: AXUIElement.self)
     }
 
     /// Children of an AX element, or empty when it has none.

@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: JSON-based configuration overrides for timing and numeric constants.
 // ABOUTME: Reads settings.json first, then MIRROIR_* env vars, falling back to TimingConstants.
 
@@ -107,6 +119,10 @@ public enum EnvConfig {
         readUInt32("spaceSwitchSettleUs", default: TimingConstants.spaceSwitchSettleUs)
     }
 
+    public static var windowGeometryRecheckUs: UInt32 {
+        readUInt32("windowGeometryRecheckUs", default: TimingConstants.windowGeometryRecheckUs)
+    }
+
     public static var activationConfirmTimeoutUs: UInt32 {
         readUInt32("activationConfirmTimeoutUs", default: TimingConstants.activationConfirmTimeoutUs)
     }
@@ -163,6 +179,20 @@ public enum EnvConfig {
 
     public static var postHeartbeatSettleUs: UInt32 {
         readUInt32("postHeartbeatSettleUs", default: TimingConstants.postHeartbeatSettleUs)
+    }
+
+    // MARK: - Listen
+
+    public static var listenSilencePeak: Double {
+        readDouble("listenSilencePeak", default: TimingConstants.listenSilencePeak)
+    }
+
+    public static var listenSilentStartSeconds: Double {
+        readDouble("listenSilentStartSeconds", default: TimingConstants.listenSilentStartSeconds)
+    }
+
+    public static var listenTrailingSilenceSeconds: Double {
+        readDouble("listenTrailingSilenceSeconds", default: TimingConstants.listenTrailingSilenceSeconds)
     }
 
     // MARK: - CGEvent Keyboard
@@ -335,9 +365,15 @@ public enum EnvConfig {
         // JSON numbers: 0 = false, non-zero = true
         if let value = settings[key] as? Int { return value != 0 }
         if let str = env[envVar ?? envVarName(key)] {
-            return ["true", "1", "yes"].contains(str.lowercased())
+            return isTrue(str)
         }
         return fallback
+    }
+
+    /// Whether an environment value reads as on: `true`, `1` or `yes`, in any
+    /// case. Anything else, an unsubstituted `${...}` placeholder included, is off.
+    public static func isTrue(_ value: String) -> Bool {
+        ["true", "1", "yes"].contains(value.lowercased())
     }
 
     static func readDouble(_ key: String, default fallback: Double) -> Double {
@@ -350,14 +386,14 @@ public enum EnvConfig {
     }
 
     /// Reads a string array from settings.json (JSON array) or an env var
-    /// (comma-separated, e.g. "ja-JP,en-US"). Returns `fallback` when absent.
-    static func readStringArray(_ key: String, envVar: String? = nil,
-                                default fallback: [String]) -> [String] {
+    /// (comma-separated, e.g. "ja-JP,en-US"). Returns `nil` when the key is
+    /// absent from both, so the caller decides what an unset value means.
+    static func readOptionalStringArray(_ key: String, envVar: String? = nil) -> [String]? {
         if let arr = settings[key] as? [String], !arr.isEmpty { return arr }
         let varName = envVar ?? envVarName(key)
         if let str = env[varName], !str.isEmpty {
             return str.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         }
-        return fallback
+        return nil
     }
 }

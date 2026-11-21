@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Unit tests for MirroringWindowResolver's window identification and overlay classification.
 // ABOUTME: Covers title vs size matching, AX-only geometry, paused detection and resume-control safety.
 
@@ -59,6 +71,46 @@ final class MirroringWindowResolverTests: XCTestCase {
             windowList: [WindowListEntry(
                 windowID: 3, ownerPID: pid, name: "iPhone Mirroring", bounds: cg)])
         XCTAssertEqual(info?.size, cg.size)
+    }
+
+    /// Measured on macOS 26.5 with Stage Manager on (#83): a window in the
+    /// strip keeps its AX frame while the window server reports the tilted
+    /// thumbnail. The AX frame is where the window shows once it is on stage.
+    func testStageManagerStripThumbnailReportsAXGeometryWithTheWindowID() {
+        let ax = CGRect(x: 1273, y: 34, width: 430, height: 942)
+        let info = MirroringWindowResolver.windowInfo(
+            pid: pid, axWindow: axWindow(frame: ax),
+            windowList: [WindowListEntry(
+                windowID: 124085, ownerPID: pid, name: "iPhone Mirroring",
+                bounds: CGRect(x: 1648, y: 494, width: 47, height: 141))])
+        XCTAssertEqual(info?.windowID, 124085)
+        XCTAssertEqual(info?.position, ax.origin)
+        XCTAssertEqual(info?.size, ax.size)
+    }
+
+    /// Measured on macOS 26.5: Mission Control shows the window at about half
+    /// its size, and the window server reports that scaled copy.
+    func testMissionControlThumbnailReportsAXGeometry() {
+        let ax = CGRect(x: 1273, y: 34, width: 430, height: 942)
+        let info = MirroringWindowResolver.windowInfo(
+            pid: pid, axWindow: axWindow(frame: ax),
+            windowList: [WindowListEntry(
+                windowID: 124085, ownerPID: pid, name: "iPhone Mirroring",
+                bounds: CGRect(x: 1461, y: 580, width: 228, height: 499))])
+        XCTAssertEqual(info?.size, ax.size)
+        XCTAssertEqual(info?.position, ax.origin)
+    }
+
+    /// After a rotation AX can still hold the portrait size while the window
+    /// server already shows landscape: the window server wins.
+    func testRotatedWindowKeepsWindowServerGeometryOverLaggingAX() {
+        let cg = CGRect(x: 1000, y: 300, width: 942, height: 430)
+        let info = MirroringWindowResolver.windowInfo(
+            pid: pid, axWindow: axWindow(frame: CGRect(x: 1273, y: 34, width: 430, height: 942)),
+            windowList: [WindowListEntry(
+                windowID: 9, ownerPID: pid, name: "iPhone Mirroring", bounds: cg)])
+        XCTAssertEqual(info?.size, cg.size)
+        XCTAssertEqual(info?.position, cg.origin)
     }
 
     func testNothingIdentifiedAndNoAXFrameIsNil() {
@@ -165,6 +217,34 @@ final class MirroringWindowResolverTests: XCTestCase {
             .paused)
     }
 
+    /// carnet#77: the AX tree captured on 2026-11-17 after typing "horloge"
+    /// into Spotlight on an iOS 27 phone. The Mac drew its autocorrection
+    /// bubble over the live window: "Horloge" and a close button.
+    private var autocorrectionBubble: AXNodeSnapshot {
+        AXNodeSnapshot(role: "AXGroup", identifier: "NSAutocorrectionSuggestion", children: [
+            AXNodeSnapshot(role: "AXList", children: [
+                AXNodeSnapshot(role: "AXStaticText", label: "Horloge"),
+            ]),
+            AXNodeSnapshot(role: "AXButton", label: "close"),
+        ])
+    }
+
+    func testTheMacAutocorrectionBubbleOverALiveSessionIsConnected() {
+        let hosting = AXNodeSnapshot(role: "AXGroup", children: [autocorrectionBubble])
+        XCTAssertEqual(state(axWindow(frame: nil, hosting: hosting)), .connected)
+    }
+
+    func testTheAutocorrectionBubbleDoesNotHideAnOverlay() {
+        let hosting = AXNodeSnapshot(role: "AXGroup", children: [
+            autocorrectionBubble,
+            AXNodeSnapshot(role: "AXGroup", children: [
+                AXNodeSnapshot(role: "AXStaticText", label: "iPhone Mirroring Paused"),
+                AXNodeSnapshot(role: "AXButton", label: "Resume"),
+            ]),
+        ])
+        XCTAssertEqual(state(axWindow(frame: nil, hosting: hosting)), .paused)
+    }
+
     func testToolbarButtonWithoutSubroleOrIdentifierStillReadsAsOverlay() {
         // Only known chrome is exempt; an unknown button keeps the safe answer.
         let hosting = AXNodeSnapshot(role: "AXGroup", children: [
@@ -173,6 +253,28 @@ final class MirroringWindowResolverTests: XCTestCase {
         XCTAssertEqual(
             state(axWindow(frame: nil, hosting: hosting)),
             .paused)
+    }
+
+    // MARK: - mirror window
+
+    /// carnet#85, measured 2026-11-17: with iPhone Mirroring Settings open, the
+    /// Settings window was the AX main window and read as a paused session.
+    func testTheSettingsWindowIsNeverTakenForTheMirror() {
+        let index = MirroringWindowResolver.mirrorWindowIndex(identifiers: [
+            "com_apple_SwiftUI_Settings_window", "iphone-mirroring-main", "com_apple_SwiftUI_Settings_window",
+        ])
+        XCTAssertEqual(index, 1)
+    }
+
+    func testTheMainWindowIsTheMirrorWhenItIsNotAnAccessory() {
+        XCTAssertEqual(MirroringWindowResolver.mirrorWindowIndex(identifiers: ["iphone-mirroring-main"]), 0)
+        XCTAssertEqual(MirroringWindowResolver.mirrorWindowIndex(identifiers: [nil]), 0,
+                       "a window with no identifier (FakeMirroring) is the mirror")
+    }
+
+    func testOnlyAccessoryWindowsMeanNoMirror() {
+        XCTAssertNil(MirroringWindowResolver.mirrorWindowIndex(
+            identifiers: ["com_apple_SwiftUI_Settings_window"]))
     }
 
     // MARK: - resume control

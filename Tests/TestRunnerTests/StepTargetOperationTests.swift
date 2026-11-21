@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Checks that a step whose operation the current target lacks fails with the tool's own refusal and sends nothing.
 // ABOUTME: Covers run_steps, test and compile, which all execute steps through StepExecutor.
 
@@ -63,6 +75,21 @@ final class StepTargetOperationTests: XCTestCase {
         let launch = executor.execute(step: .launch(appName: "Clock"), stepIndex: 2, skillName: "t")
         XCTAssertEqual(launch.status, .failed)
         XCTAssertEqual(macInput.launchAppCalls, [])
+    }
+
+    /// carnet#45: a skill's `home` step fails when the iPhone did not receive it.
+    func testAHomeStepOnAPausedSessionFails() throws {
+        let executor = try executor(on: "iphone")
+        phoneInput.ensureConnectedResult = "Target 'iphone' is paused"
+        let refused = executor.execute(step: .home, stepIndex: 0, skillName: "t")
+        XCTAssertEqual(refused.status, .failed)
+        XCTAssertEqual(refused.message, "Target 'iphone' is paused")
+        XCTAssertTrue(phoneBridge.menuActionCalls.isEmpty)
+
+        phoneInput.ensureConnectedResult = nil
+        let pressed = executor.execute(step: .home, stepIndex: 1, skillName: "t")
+        XCTAssertEqual(pressed.status, .passed)
+        XCTAssertEqual(phoneBridge.menuActionCalls.map(\.item), ["Home Screen"])
     }
 
     func testAStepEveryTargetHasStillRuns() throws {

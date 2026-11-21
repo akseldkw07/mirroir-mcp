@@ -1,32 +1,92 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Records video of the iPhone Mirroring window using macOS screencapture CLI.
-// ABOUTME: Manages start/stop lifecycle and returns the path to the recorded .mov file.
+// ABOUTME: Manages start/stop, keeps the display awake meanwhile, and reports a recording that ended on its own.
 
 import Foundation
 import HelperLib
 import os
 
 /// Records the iPhone Mirroring window as a video file.
-/// Uses the macOS `screencapture -v -l <windowID>` command which records
-/// a specific window until stopped via SIGINT.
+/// Uses the macOS `screencapture -v` command, which records until stopped via
+/// SIGINT, or until its stdin delivers a byte or ends: it is given a pipe of
+/// its own that stays open while it records, never the server's stdin (the
+/// JSON-RPC stream on stdio, `/dev/null` under launchd).
+///
+/// screencapture can end on its own (measured once around display sleep).
+/// The recorder then keeps the file's path, so `stopRecording` still returns
+/// the partial video and says the recording ended early, and a new
+/// `startRecording` refuses until that video was collected.
 ///
 /// Requires Screen Recording permission in System Preferences > Privacy & Security.
 final class ScreenRecorder: Sendable {
     private let bridge: any WindowBridging
+    private let displayAwake: DisplayAwake
+    private let command: @Sendable (_ window: WindowInfo, _ path: String) -> (URL, [String])
+
+    /// The newest macOS on which `screencapture -v -l <windowID>` was measured
+    /// to record only the window (macOS 26.5: 860x1884 for a 430x942 window).
+    /// On macOS 15.7 it records the main display, so older versions record
+    /// the window's frame with `-R` instead, which also shows whatever covers it.
+    static let windowRecordingMacOSMajor = 26
+
+    /// The screencapture command that records `window` into `path`.
+    static func screencapture(
+        window: WindowInfo, path: String,
+        macOSMajor: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+    ) -> (URL, [String]) {
+        let target: [String]
+        if macOSMajor >= windowRecordingMacOSMajor {
+            target = ["-l", String(window.windowID), "-o"]
+        } else {
+            let frame = [window.position.x, window.position.y, window.size.width, window.size.height]
+            target = ["-R", frame.map { String(Int($0.rounded())) }.joined(separator: ",")]
+        }
+        return (URL(fileURLWithPath: "/usr/sbin/screencapture"), ["-v", "-x"] + target + [path])
+    }
+
+    /// screencapture's exit status when SIGINT stops it, as `stopRecording` does.
+    static let interruptedStatus: Int32 = 2
 
     /// Mutable recording state protected by an unfair lock.
     /// Uses @unchecked Sendable because Process is not Sendable but access
     /// is serialized through OSAllocatedUnfairLock.
     private struct RecordingState: @unchecked Sendable {
         var process: Process?
+        /// screencapture's stdin, held open while it records.
+        var input: Pipe?
         var path: String?
+        /// Set by `stopRecording` before it interrupts, so the end it causes
+        /// is not taken for an early one.
+        var stopping = false
+        /// When the process ended without being asked to.
+        var endedEarlyAt: Date?
     }
     private let state = OSAllocatedUnfairLock(initialState: RecordingState())
 
-    init(bridge: any WindowBridging) {
+    /// - Parameters:
+    ///   - displayAwake: kept entered while a recording runs.
+    ///   - command: the program and arguments that record a window into a file.
+    init(bridge: any WindowBridging, displayAwake: DisplayAwake = .shared,
+         command: @escaping @Sendable (WindowInfo, String) -> (URL, [String]) = {
+             ScreenRecorder.screencapture(window: $0, path: $1)
+         }) {
         self.bridge = bridge
+        self.displayAwake = displayAwake
+        self.command = command
     }
 
     /// Whether a recording is currently in progress.
@@ -37,8 +97,13 @@ final class ScreenRecorder: Sendable {
     /// Start recording the mirroring window.
     /// Returns nil on success, or an error message on failure.
     func startRecording(outputPath: String? = nil) -> String? {
-        guard !isRecording else {
+        let (running, uncollected) = state.withLock { ($0.process?.isRunning ?? false, $0.path) }
+        if running {
             return "Recording already in progress. Stop the current recording first."
+        }
+        if let uncollected {
+            return "The previous recording ended on its own and was not collected; its video is at "
+                + "\(uncollected). Call stop_recording to collect it, then start again."
         }
 
         guard let info = bridge.getWindowInfo(), info.windowID != 0 else {
@@ -46,70 +111,90 @@ final class ScreenRecorder: Sendable {
         }
 
         let path = outputPath ?? defaultRecordingPath()
+        let (executable, arguments) = command(info, path)
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-v", "-l", String(info.windowID), "-x", "-o", path]
+        process.executableURL = executable
+        process.arguments = arguments
+        let input = Pipe()
+        process.standardInput = input
 
         // Suppress stdout/stderr from screencapture
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
 
+        displayAwake.enter(reason: "mirroir-mcp start_recording")
+        process.terminationHandler = { [state, displayAwake] ended in
+            state.withLock { current in
+                guard current.process === ended, !current.stopping else { return }
+                current.endedEarlyAt = Date()
+            }
+            DebugLog.persist("recording", "screencapture exited with status \(ended.terminationStatus)")
+            displayAwake.leave()
+        }
+
         do {
             try process.run()
         } catch {
+            process.terminationHandler = nil
+            displayAwake.leave()
             return "Failed to start recording: \(error.localizedDescription)"
+        }
+
+        state.withLock {
+            $0 = RecordingState(process: process, input: input, path: path)
         }
 
         // Verify the process actually started (Screen Recording permission may block it)
         usleep(EnvConfig.earlyFailureDetectUs)
         guard process.isRunning else {
+            state.withLock { $0 = RecordingState() }
             let status = process.terminationStatus
             return "Recording failed to start (exit code \(status)). "
                 + "Check Screen Recording permission in System Preferences > Privacy & Security."
         }
-
-        state.withLock {
-            $0.process = process
-            $0.path = path
-        }
         return nil
     }
 
-    /// Stop the current recording and return the path to the recorded file.
-    /// Returns a tuple of (filePath, errorMessage). On success, filePath is set.
-    /// On failure, errorMessage is set.
-    func stopRecording() -> (filePath: String?, error: String?) {
+    /// Stop the current recording and return the recorded file. A recording
+    /// that already ended on its own still returns its file, with `endedEarly`
+    /// saying so.
+    func stopRecording() -> RecordingStop {
         let (process, path) = state.withLock { s -> (Process?, String?) in
-            let p = s.process
-            let pt = s.path
-            return (p, pt)
+            if s.process?.isRunning == true { s.stopping = true }
+            return (s.process, s.path)
         }
 
-        guard let process = process, process.isRunning else {
-            return (nil, "No recording in progress")
+        guard let process, let path else {
+            return RecordingStop(filePath: nil, error: "No recording in progress")
         }
 
-        // Send SIGINT to gracefully stop screencapture (same as Ctrl+C)
-        process.interrupt()
-        process.waitUntilExit()
-
-        state.withLock {
-            $0.process = nil
-            $0.path = nil
+        var endedEarly: String?
+        if process.isRunning {
+            // Send SIGINT to gracefully stop screencapture (same as Ctrl+C)
+            process.interrupt()
+            process.waitUntilExit()
+        } else {
+            process.waitUntilExit()
+            let at = state.withLock { $0.endedEarlyAt }
+            let when = at.map { " at " + ISO8601DateFormatter().string(from: $0) } ?? ""
+            endedEarly = "the recording had already ended on its own\(when) "
+                + "(screencapture exit status \(process.terminationStatus)), before stop_recording; "
+                + "display sleep or a locked Mac can end it"
         }
 
-        guard process.terminationStatus == 0 || process.terminationStatus == 2 else {
-            // Exit code 2 is normal for SIGINT termination
-            return (nil, "Recording stopped with error (exit code \(process.terminationStatus))")
-        }
+        state.withLock { $0 = RecordingState() }
 
-        // Verify the file was created
-        guard let filePath = path,
-              FileManager.default.fileExists(atPath: filePath) else {
-            return (nil, "Recording file not found at expected path")
+        let status = process.terminationStatus
+        let exists = FileManager.default.fileExists(atPath: path)
+        if endedEarly == nil, status != 0, status != Self.interruptedStatus {
+            return RecordingStop(filePath: nil, error: "Recording stopped with error (exit code \(status))")
         }
-
-        return (filePath, nil)
+        guard exists else {
+            let error = endedEarly.map { "No video was saved: \($0)." }
+                ?? "Recording file not found at expected path"
+            return RecordingStop(filePath: nil, error: error)
+        }
+        return RecordingStop(filePath: path, error: nil, endedEarly: endedEarly)
     }
 
     /// Generate a default recording path in the temp directory.

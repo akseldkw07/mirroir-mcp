@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Scenario top-level YAML structure — the document type emitted by mirroir's recorder.
 // ABOUTME: Wraps a version-gated list of SkillStep entries plus optional name/description/tags.
 
@@ -10,6 +25,7 @@ use crate::parser::version::SchemaVersion;
 /// Top-level shape of a scenario YAML file.
 ///
 /// Mirrors the `name / app / description / tags / steps` keys mirroir emits, plus the
+/// runner-only `requires_clean_boot` (an older runner refuses it as unknown) and
 /// `version` the runner gates on. Unknown keys are refused at a known minor and
 /// ignored at a newer one — [`crate::parser::version`] decides which.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -32,6 +48,12 @@ pub struct Scenario {
     /// the `drift-defaults.yaml` on the search path.
     #[serde(default)]
     pub drift: Option<DriftThresholds>,
+    /// In a `boot_once` sample, run this scenario against a server booted for
+    /// it alone, then boot a fresh shared one for the scenarios after it: a
+    /// destructive flow or a state reset neither inherits nor leaks state.
+    /// Outside a `boot_once` sample every scenario already boots its own.
+    #[serde(default)]
+    pub requires_clean_boot: bool,
     /// Ordered list of steps the runner executes.
     #[serde(with = "serde_norway::with::singleton_map_recursive")]
     pub steps: Vec<SkillStep>,

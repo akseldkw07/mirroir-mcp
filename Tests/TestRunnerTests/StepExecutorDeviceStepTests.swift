@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for StepExecutor device-level steps: scroll_to, reset_app, set_network, and measure.
 // ABOUTME: Uses the stub subsystems from StepExecutorTests to verify OCR-driven step execution.
 
@@ -279,7 +291,9 @@ extension StepExecutorTests {
 
     // MARK: - set_network
 
-    func testSetNetworkAirplaneOn() {
+    /// The step reads the switch from the screenshot; with none to read it
+    /// refuses and taps nothing (carnet#79: it used to tap the label blind).
+    func testSetNetworkWithAnUnreadableSwitchTapsNothing() {
         describer.describeResult = ScreenDescriber.DescribeResult(
             elements: [TapPoint(text: "Airplane Mode", tapX: 200, tapY: 150, confidence: 0.95)],
             screenshotBase64: ""
@@ -287,10 +301,11 @@ extension StepExecutorTests {
 
         let result = executor.execute(
             step: .setNetwork(mode: "airplane_on"), stepIndex: 0, skillName: "test")
-        XCTAssertEqual(result.status, .passed)
-        XCTAssertTrue(result.message?.contains("airplane_on") ?? false)
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertTrue(result.message?.contains("No Airplane Mode switch was found") ?? false,
+                      result.message ?? "nil")
         XCTAssertEqual(input.launchAppCalls, ["Settings"])
-        XCTAssertEqual(input.tapCalls.count, 1)
+        XCTAssertTrue(input.tapCalls.isEmpty)
     }
 
     func testSetNetworkInvalidMode() {

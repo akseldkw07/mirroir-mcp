@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests which input InputSimulation posts straight to the target's window and which keeps the HID path.
 // ABOUTME: Pins swipes to the window poster with no activation; taps, keys, drags and HID swipes need the front.
 
@@ -26,7 +38,7 @@ final class WindowDeliveryTests: XCTestCase {
         bridge.windowInfo = WindowInfo(
             windowID: windowID ?? self.windowID, position: CGPoint(x: 100, y: 50),
             size: CGSize(width: 410, height: 898), pid: windowPID)
-        return InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+        return InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY,
                                keyPoster: keys, clickPoster: clicks, windowPoster: poster)
     }
 
@@ -105,7 +117,7 @@ final class WindowDeliveryTests: XCTestCase {
         bridge.frontmost = false
         bridge.windowInfo = WindowInfo(windowID: windowID, position: CGPoint(x: 100, y: 50),
                                        size: CGSize(width: 410, height: 898), pid: 99_999)
-        let input = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+        let input = InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY,
                                     keyPoster: RecordingKeyPoster(), windowPoster: poster)
         XCTAssertNil(input.swipe(fromX: 200, fromY: 600, toX: 200, toY: 200,
                                  durationMs: 100, cursorMode: nil))
@@ -152,8 +164,10 @@ final class WindowDeliveryTests: XCTestCase {
     }
 
     /// `test`, `compile` and `record` build their input through this factory,
-    /// so the CLI posts to the window exactly like the MCP server does.
-    func testEveryMirrorEntryPointGetsTheWindowPoster() {
-        XCTAssertNotNil(IPhoneMirroringTarget.input(bridge: MirroringBridge()).windowPoster)
+    /// so the CLI posts to the window exactly like the MCP server does, on the
+    /// macOS versions `WindowInputPolicy` allows.
+    func testEveryMirrorEntryPointFollowsTheWindowInputPolicy() {
+        let poster = IPhoneMirroringTarget.input(bridge: MirroringBridge()).windowPoster
+        XCTAssertEqual(poster != nil, WindowInputPolicy.live.usesWindow)
     }
 }

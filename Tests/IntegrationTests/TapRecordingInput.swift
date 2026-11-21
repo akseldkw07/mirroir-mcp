@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Test-only InputProviding decorator that records tap coordinates while forwarding every call.
 // ABOUTME: Lets FakeMirroring end-to-end tests assert on the physical tap sequence.
 
@@ -57,10 +69,12 @@ final class TapRecordingInput: InputProviding, @unchecked Sendable {
 
     func shake() -> TypeResult { base.shake() }
     func typeText(_ text: String) -> TypeResult { base.typeText(text) }
+    func rememberKeyboardLayout(_ name: String) -> String? { base.rememberKeyboardLayout(name) }
     func pressKey(keyName: String, modifiers: [String]) -> TypeResult {
         base.pressKey(keyName: keyName, modifiers: modifiers)
     }
     func launchApp(name: String) -> String? { base.launchApp(name: name) }
+    func ensureConnected(tag: String) -> String? { base.ensureConnected(tag: tag) }
     func openURL(_ url: String) -> String? { base.openURL(url) }
     func touch(_ command: TouchCommand) -> Result<TouchOutcome, TouchSessionError> {
         base.touch(command)

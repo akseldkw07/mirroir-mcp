@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Multi-target registry that tracks all configured window targets.
 // ABOUTME: Maintains an active target and resolves per-call target overrides.
 
@@ -13,8 +25,8 @@ import os
 /// `ctx.backtracker.tapBack(...)`) without threading through a separate type.
 struct TargetContext: Target, Sendable {
     let name: String
-    /// Stable legacy identifier ("iphone-mirroring" / "generic-window") kept for
-    /// config-file compatibility and telemetry. All runtime behavior should query
+    /// Config-type string from `targets.json` ("iphone-mirroring" / "macos-app"),
+    /// kept for telemetry and display. All runtime behavior should query
     /// `profile.*` instead of comparing this string.
     let targetType: String
     let bundleID: String?

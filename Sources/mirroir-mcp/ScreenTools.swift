@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Registers screen-related MCP tools: screenshot, describe_screen, start/stop recording.
 // ABOUTME: Each tool maps MCP JSON-RPC calls to the capture, recorder, and describer subsystems.
 
@@ -312,7 +324,8 @@ extension MirroirMCP {
             name: "start_recording",
             description: """
                 Start recording a video of the mirrored iPhone screen. \
-                Records the iPhone Mirroring window as a .mov file. \
+                Records the iPhone Mirroring window as a .mov file, keeping the \
+                Mac's display awake until it stops. \
                 Use stop_recording to end the recording and get the file path. \
                 Requires Screen Recording permission in System Preferences.
                 """,
@@ -346,7 +359,9 @@ extension MirroirMCP {
             description: """
                 Stop the current video recording and return the file path. \
                 Must be called after start_recording. Returns the path to \
-                the recorded .mov file.
+                the recorded .mov file. If the recording had already ended on \
+                its own (display sleep can end it), it still returns the file \
+                and says the video stops early.
                 """,
             inputSchema: [
                 "type": .string("object"),
@@ -363,6 +378,9 @@ extension MirroirMCP {
                 }
                 guard let path = result.filePath else {
                     return .error("Recording stopped but no file was produced")
+                }
+                if let endedEarly = result.endedEarly {
+                    return .text("Recording saved to: \(path). Note: \(endedEarly), so the video stops there.")
                 }
                 return .text("Recording saved to: \(path)")
             }

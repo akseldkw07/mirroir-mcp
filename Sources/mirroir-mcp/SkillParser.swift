@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Parses skill YAML files into structured SkillDefinition with typed steps.
 // ABOUTME: Uses regex-based parsing (no Yams dependency) reusing helpers from SkillTools.
 
@@ -39,6 +51,9 @@ enum SkillStep {
     case launch(appName: String)
     case tap(label: String)
     case type(text: String)
+    /// Empty the focused text field (Cmd+A, then Delete), for a `type` into a
+    /// field that is already filled.
+    case clearField
     case pressKey(keyName: String, modifiers: [String])
     case swipe(direction: String)
     case waitFor(label: String, timeoutSeconds: Int?)
@@ -70,6 +85,7 @@ enum SkillStep {
         case .launch: return "launch"
         case .tap: return "tap"
         case .type: return "type"
+        case .clearField: return SkillParser.clearFieldKey
         case .pressKey: return "press_key"
         case .swipe: return "swipe"
         case .waitFor: return "wait_for"
@@ -113,6 +129,7 @@ enum SkillStep {
         case .assertNotVisible(let label): return label
         case .screenshot(let label): return label
         case .home: return nil
+        case .clearField: return nil
         case .openURL(let url): return url
         case .shake: return nil
         case .scrollTo(let label, _, _): return label
@@ -142,6 +159,7 @@ enum SkillStep {
         case .assertNotVisible(let label): return "assert_not_visible: \"\(label)\""
         case .screenshot(let label): return "screenshot: \"\(label)\""
         case .home: return "home"
+        case .clearField: return SkillParser.clearFieldKey
         case .openURL(let url): return "open_url: \"\(url)\""
         case .shake: return "shake"
         case .scrollTo(let label, _, _): return "scroll_to: \"\(label)\""
@@ -193,6 +211,8 @@ enum SkillParser {
     /// The `kind:` value of a scene skill: model-interpreted, played only by a
     /// `scene:` step, never compiled.
     static let gameKind = "game"
+    /// The step that empties the focused text field: a bare `clear_field`.
+    static let clearFieldKey = "clear_field"
 
     /// Whether `content`'s header declares `kind: game`.
     static func isGame(content: String) -> Bool {
@@ -293,6 +313,9 @@ enum SkillParser {
         if trimmed == "shake" {
             return .shake
         }
+        if trimmed == clearFieldKey {
+            return .clearField
+        }
 
         // Parse "key: value" format. A bare word that is not a known keyword
         // is not an action this runner can perform.
@@ -343,6 +366,8 @@ enum SkillParser {
             return .openURL(url: value)
         case "shake":
             return .shake
+        case clearFieldKey:
+            return .clearField
         case "scroll_to":
             return .scrollTo(label: value, direction: .down, maxScrolls: EnvConfig.defaultScrollMaxAttempts)
         case "reset_app":

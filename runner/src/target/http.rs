@@ -1,4 +1,19 @@
-// ABOUTME: HTTP target — REST probes with status + body substring assertions.
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+// ABOUTME: HTTP target — REST probes with status + body substring assertions; file:// URLs go to file_url.
 // ABOUTME: Wraps reqwest::Client; one client per scenario run, reused across http: steps.
 
 use std::time::Duration;
@@ -9,6 +24,7 @@ use tracing::{debug, info};
 use crate::error::{Result, RunnerError};
 use crate::http_error::HttpError;
 use crate::parser::step::{HttpArgs, HttpMethod};
+use crate::target::file_url;
 use crate::tls;
 
 /// Default per-request timeout when `http: { timeout_s: ... }` is omitted.
@@ -53,6 +69,9 @@ impl HttpClient {
     /// * [`HttpError::BodyRead`] when decoding the response body fails.
     /// * [`HttpError::BodyMismatch`] when a required substring is absent.
     pub async fn dispatch(&self, args: &HttpArgs) -> Result<()> {
+        if file_url::is_file_url(&args.url) {
+            return file_url::dispatch(args).await;
+        }
         let method = map_method(args.method);
         let timeout =
             Duration::from_secs(u64::from(args.timeout_s.unwrap_or(HTTP_DEFAULT_TIMEOUT_S)));
@@ -93,14 +112,7 @@ impl HttpClient {
                 source,
             })?;
 
-        for substring in &args.expect_body_contains {
-            if !body.contains(substring) {
-                return Err(RunnerError::Http(HttpError::BodyMismatch {
-                    url: args.url.clone(),
-                    expected: substring.clone(),
-                }));
-            }
-        }
+        check_body(&args.url, &body, &args.expect_body_contains)?;
 
         info!(
             url = %args.url,
@@ -111,6 +123,23 @@ impl HttpClient {
         );
         Ok(())
     }
+}
+
+/// Fail with [`HttpError::BodyMismatch`] on the first of `substrings` that `body` lacks.
+///
+/// # Errors
+///
+/// * [`HttpError::BodyMismatch`] naming the missing substring.
+pub fn check_body(url: &str, body: &str, substrings: &[String]) -> Result<()> {
+    substrings
+        .iter()
+        .find(|substring| !body.contains(substring.as_str()))
+        .map_or(Ok(()), |missing| {
+            Err(RunnerError::Http(HttpError::BodyMismatch {
+                url: url.to_owned(),
+                expected: missing.clone(),
+            }))
+        })
 }
 
 fn map_method(method: HttpMethod) -> Method {

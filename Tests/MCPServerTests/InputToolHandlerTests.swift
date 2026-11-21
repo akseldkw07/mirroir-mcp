@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for input tool MCP handlers: tap, swipe, drag, type_text, press_key, long_press, double_tap, shake.
 // ABOUTME: Verifies parameter validation, error propagation, and success message formatting.
 
@@ -21,8 +33,8 @@ final class InputToolHandlerTests: XCTestCase {
         bridge = StubBridge()
         input = StubInput()
         let registry = makeTestRegistry(bridge: bridge, input: input)
-        MirroirMCP.registerInputTools(server: server, registry: registry)
-        MirroirMCP.registerTapTools(server: server, registry: registry)
+        MirroirMCP.registerInputTools(server: server, registry: registry, policy: policy)
+        MirroirMCP.registerTapTools(server: server, registry: registry, policy: policy)
     }
 
     private func callTool(_ name: String, args: [String: JSONValue] = [:]) -> JSONRPCResponse {
@@ -156,6 +168,22 @@ final class InputToolHandlerTests: XCTestCase {
         let response = callTool("type_text", args: ["text": .string("hello")])
         XCTAssertFalse(isError(response))
         XCTAssertEqual(extractText(response), "Typed 5 characters")
+        XCTAssertEqual(input.keyboardLog, ["type:hello"], "no clear unless asked")
+    }
+
+    func testTypeTextClearEmptiesTheFieldBeforeTyping() {
+        let response = callTool("type_text", args: ["text": .string("Burger"), "clear": .bool(true)])
+        XCTAssertFalse(isError(response))
+        XCTAssertEqual(extractText(response), "Cleared the field, then typed 6 characters")
+        XCTAssertEqual(input.keyboardLog, ["key:command+a", "key:delete", "type:Burger"])
+    }
+
+    func testTypeTextClearThatFailsTypesNothing() {
+        input.pressKeyResultByKey["delete"] = TypeResult(success: false, error: "key dropped")
+        let response = callTool("type_text", args: ["text": .string("Burger"), "clear": .bool(true)])
+        XCTAssertTrue(isError(response))
+        XCTAssertEqual(extractText(response), "Could not delete the field's text (Delete): key dropped")
+        XCTAssertTrue(input.typeCalls.isEmpty)
     }
 
     // MARK: - press_key

@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Runs a list of skill steps handed over in one MCP call, through the same StepExecutor `mirroir test` uses.
 // ABOUTME: Every step is checked against the permission policy before the first one runs; the run stops at the first failure.
 
@@ -17,6 +29,9 @@ enum InlineStepRunner {
     struct Report {
         let results: [StepResult]
         let screenText: String?
+        /// The label of a final text tap after which the screen read the same
+        /// as just before it, or nil.
+        var unchangedTap: String?
 
         var failed: Bool { results.contains { $0.status.isFailure } }
 
@@ -26,6 +41,12 @@ enum InlineStepRunner {
                 let seconds = String(format: "%.1f", result.durationSeconds)
                 let message = result.message.map { " — \($0)" } ?? ""
                 return "\(index + 1). \(result.status.rawValue) \(result.step.displayName) (\(seconds)s)\(message)"
+            }
+            if let unchangedTap {
+                lines.append("")
+                lines.append("The screen read the same before and after tapping \"\(unchangedTap)\". "
+                    + "If the tap should change it, describe the screen again; if it still has not "
+                    + "changed, the tap did not reach the iPhone.")
             }
             if let screenText {
                 lines.append("")
@@ -83,9 +104,13 @@ enum InlineStepRunner {
     }
 
     /// Run `steps` in order on `executor`, skipping the rest after a failure,
-    /// then read the screen once.
-    static func run(_ steps: [SkillStep], executor: StepExecutor) -> Report {
+    /// then read the screen once. When the last step is a passing text tap
+    /// and the executor reads through a `RecordingDescriber`, the read the
+    /// tap was found in is compared with the read after it.
+    static func run(_ steps: [SkillStep], executor: StepExecutor, policy: PermissionPolicy) -> Report {
+        let reads = executor.describer as? RecordingDescriber
         var results: [StepResult] = []
+        var tapRead: (label: String, elements: [TapPoint])?
         for (index, step) in steps.enumerated() {
             if results.last?.status.isFailure == true {
                 results.append(StepResult(step: step, status: .skipped,
@@ -93,15 +118,66 @@ enum InlineStepRunner {
                                           durationSeconds: 0))
                 continue
             }
-            results.append(executor.execute(step: step, stepIndex: index, skillName: runName))
+            let result = drivingStop(step, executor: executor, policy: policy)
+                ?? blockedTap(step, executor: executor, policy: policy)
+                ?? executor.execute(step: step, stepIndex: index, skillName: runName)
+            results.append(result)
+            tapRead = nil
+            if case .tap(let label) = step, TapStepPoint.parse(label) == nil,
+               result.status == .passed, let before = reads?.lastResult {
+                tapRead = (label, before.elements)
+            }
         }
-        // Unlabeled icons carry a placeholder name, not text the screen shows.
-        let screen = executor.describer.describe()
-            .map { result in
-                ScenarioStepFormatter.screenText(
-                    elements: result.elements.filter { $0.text != CoreMLElementDetector.iconLabel })
-                .trimmingCharacters(in: .whitespacesAndNewlines) }
-        return Report(results: results, screenText: screen)
+        let after = executor.describer.describe()
+        var report = Report(results: results, screenText: after.map(screenText))
+        if let tapRead, let after, readsTheSame(tapRead.elements, after.elements) {
+            report.unchangedTap = tapRead.label
+        }
+        return report
+    }
+
+    /// Whether two reads show the same screen: the same structural text, with
+    /// the clock, counters and badges left out (`StructuralFingerprint`), so a
+    /// status bar that ticked or OCR that read a glyph differently does not
+    /// hide a tap the screen did not answer.
+    static func readsTheSame(_ before: [TapPoint], _ after: [TapPoint]) -> Bool {
+        let structural = StructuralFingerprint.extractStructural(from: before)
+        return !structural.isEmpty && structural == StructuralFingerprint.extractStructural(from: after)
+    }
+
+    /// A failed result for a step driving mode refuses (`DrivingGuard`): the
+    /// screen is read right before each step that sends input.
+    private static func drivingStop(
+        _ step: SkillStep, executor: StepExecutor, policy: PermissionPolicy
+    ) -> StepResult? {
+        guard let refusal = DrivingGuard.refusal(
+            tool: toolName(of: step), policy: policy, read: { executor.describer.describe() })
+        else { return nil }
+        return StepResult(step: step, status: .failed, message: refusal, durationSeconds: 0)
+    }
+
+    /// A failed result for a tap or long press that lands on the icon of an
+    /// app `policy` blocks (`BlockedAppTapGuard`); nil for any other step.
+    private static func blockedTap(
+        _ step: SkillStep, executor: StepExecutor, policy: PermissionPolicy
+    ) -> StepResult? {
+        let label: String
+        switch step {
+        case .tap(let text), .longPress(let text, _): label = text
+        default: return nil
+        }
+        guard let refusal = BlockedAppTapGuard.refusal(
+            target: .label(label), bridge: executor.bridge, describer: executor.describer,
+            policy: policy) else { return nil }
+        return StepResult(step: step, status: .failed, message: refusal, durationSeconds: 0)
+    }
+
+    /// The text a read shows. Unlabeled icons carry a placeholder name, not
+    /// text the screen shows, so they are left out.
+    private static func screenText(_ result: ScreenDescriber.DescribeResult) -> String {
+        ScenarioStepFormatter.screenText(
+            elements: result.elements.filter { $0.text != CoreMLElementDetector.iconLabel })
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The executor for a run on `ctx`: the target's own input and OCR, with
@@ -113,8 +189,9 @@ enum InlineStepRunner {
             settlingDelayMs: defaults.settlingDelayMs,
             screenshotDir: (NSTemporaryDirectory() as NSString).appendingPathComponent(runName),
             dryRun: false)
+        // Recorded so a final text tap can be compared with the read it was found in.
         return StepExecutor(bridge: ctx.bridge, input: ctx.input,
-                            describer: ctx.describer, capture: ctx.capture,
+                            describer: RecordingDescriber(wrapping: ctx.describer), capture: ctx.capture,
                             config: config, registry: registry,
                             ocrDescriber: ctx.ocrDescriber, profile: ctx.profile)
     }
@@ -128,6 +205,10 @@ enum InlineStepRunner {
         switch step {
         case .launch(let app), .resetApp(let app):
             if case .denied(let reason) = policy.checkAppLaunch(app) { return reason }
+        case .openURL:
+            if case .denied(let reason) = policy.checkAppLaunch(InputSimulation.openURLAppName) { return reason }
+        case .setNetwork:
+            if case .denied(let reason) = policy.checkAppLaunch(NetworkToggle.settingsAppName) { return reason }
         case .measure(_, let action, _, _):
             return denial(for: action, policy: policy)
         default:
@@ -142,7 +223,7 @@ enum InlineStepRunner {
         switch step {
         case .launch: return "launch_app"
         case .tap: return "tap"
-        case .type: return "type_text"
+        case .type, .clearField: return "type_text"
         case .pressKey: return "press_key"
         case .swipe: return "swipe"
         case .waitFor, .assertVisible, .assertNotVisible: return "describe_screen"

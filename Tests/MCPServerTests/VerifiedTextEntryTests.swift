@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for VerifiedTextEntry and PasteNeedle: keyed runs, OCR-confirmed pastes, and honest failures.
 // ABOUTME: A scripted screen stands in for OCR so paste arrival, loss, and ordering are deterministic.
 
@@ -76,7 +88,7 @@ final class VerifiedTextEntryTests: XCTestCase {
         let result = screen.entry().enter(segments([("hello world", .keyEvent)]))
         XCTAssertTrue(result.success, result.error ?? "")
         XCTAssertNil(result.notice)
-        XCTAssertEqual(screen.log, ["keys:hello world", "read"])
+        XCTAssertEqual(screen.log, ["read", "keys:hello world", "read"], "one read before the keys, one after")
         XCTAssertEqual(screen.field, "hello world")
     }
 
@@ -106,6 +118,26 @@ final class VerifiedTextEntryTests: XCTestCase {
         let notice = result.notice ?? ""
         XCTAssertTrue(notice.contains("changed the capitalization of \"mirroir test\""), notice)
         XCTAssertFalse(notice.contains("autocorrect"), "a case change is not a rewrite: \(notice)")
+    }
+
+    /// carnet#84, measured 2026-11-17 on an iOS 27 iPhone: "horloge" typed into
+    /// Spotlight never landed, and the Home Screen's "Horloge" label behind it
+    /// passed for the typed text, case aside.
+    func testTextAlreadyOnScreenIsNotTakenForTheTypedText() {
+        let screen = ScriptedField()
+        screen.otherLines = ["Horloge", "Calendrier"]
+        screen.autocorrect = { _ in "" }
+        let result = screen.entry().enter(segments([("horloge", .keyEvent)]))
+        XCTAssertTrue(result.success, "every keystroke was sent")
+        let notice = result.notice ?? ""
+        XCTAssertTrue(notice.contains("\"horloge\" is not what the screen shows"), notice)
+    }
+
+    func testTypedTextAlsoShownElsewhereIsSeenWhenItLands() {
+        let screen = ScriptedField()
+        screen.otherLines = ["horloge"]
+        let result = screen.entry().enter(segments([("horloge", .keyEvent)]))
+        XCTAssertNil(result.notice, result.notice ?? "")
     }
 
     func testTextShownWithItsOwnCaseGetsNoNotice() {
