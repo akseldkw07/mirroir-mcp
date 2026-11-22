@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: CGEvent-based input (click, scroll, drag, keyboard) for target windows.
 // ABOUTME: Posts mouse and keyboard events directly via macOS CGEvent API.
 
@@ -164,7 +176,7 @@ enum CGEventInput {
         let plan = SwipeGestureProfile.plan(
             deltaX: deltaX, deltaY: deltaY, durationMs: durationMs
         )
-        let sender = plan.isTrackpadFlick ? TrackpadSender.current() : nil
+        let sender: TrackpadSender? = TrackpadSender.current()
 
         if let prime = makeScrollEvent(SwipeWheelStep(wheel1: 0, wheel2: 0), at: midpoint, sender: sender) {
             prime.setIntegerValueField(scrollPhaseField, value: phaseMayBegin)
@@ -182,7 +194,7 @@ enum CGEventInput {
         // so each wheel delta carries the same sign as its pixel delta.
         // SwipeGestureProfile splits the amplified distance into a drag phase
         // and, for fast flicks, a decaying momentum tail.
-        let stepDelay = UInt32(durationMs) * 1000 / UInt32(plan.drag.count)
+        let stepDelay = UInt32(plan.durationMs) * 1000 / UInt32(plan.drag.count)
         let dragVelocities = plan.dragVelocities
         let momentumVelocities = plan.momentumVelocities
 
@@ -254,7 +266,7 @@ enum CGEventInput {
 
     /// Create a continuous scroll wheel event carrying one gesture frame.
     /// Phase fields are left for the caller to set.
-    private static func makeScrollEvent(
+    static func makeScrollEvent(
         _ step: SwipeWheelStep, at location: CGPoint, velocity: TrackpadVelocity = .zero,
         momentumPhase: Int64 = 0, sender: TrackpadSender?
     ) -> CGEvent? {
@@ -272,12 +284,14 @@ enum CGEventInput {
         let pointDeltaY = CGEventField(rawValue: 96)!         // kCGScrollWheelEventPointDeltaAxis1
         let pointDeltaX = CGEventField(rawValue: 97)!         // kCGScrollWheelEventPointDeltaAxis2
         scroll.setIntegerValueField(isContinuousField, value: 1)
-        scroll.setIntegerValueField(pointDeltaY, value: Int64(step.wheel1))
-        scroll.setIntegerValueField(pointDeltaX, value: Int64(step.wheel2))
         if let sender {
             TrackpadScrollFields.apply(to: scroll, step: step, velocity: velocity,
                                        momentumPhase: momentumPhase, senderID: sender.registryID)
         }
+        // The point deltas go last: writing a line delta recomputes them from
+        // whole lines, which turns a 4-point frame into 0 and 30 into 16.
+        scroll.setIntegerValueField(pointDeltaY, value: Int64(step.wheel1))
+        scroll.setIntegerValueField(pointDeltaX, value: Int64(step.wheel2))
         return scroll
     }
 

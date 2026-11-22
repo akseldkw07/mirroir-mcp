@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Structured errors for ingesting a Playwright JSON-reporter document, whichever engine wrote it.
 // ABOUTME: Playwright writes one for a web block and mirroir-mcp writes one for an iOS block; both land here.
 
@@ -105,6 +120,11 @@ fn render_failures(failures: &[TestFailure]) -> String {
     let mut out = String::new();
     for failure in failures {
         out.push_str("\n  - ");
+        if let Some(project) = &failure.project {
+            out.push('[');
+            out.push_str(project);
+            out.push_str("] ");
+        }
         out.push_str(&failure.title);
         out.push_str(": ");
         out.push_str(&failure.message);
@@ -129,10 +149,12 @@ mod tests {
             total: 3,
             failures: vec![
                 TestFailure {
+                    project: Some("firefox".to_owned()),
                     title: "checkout".to_owned(),
                     message: "strict mode violation: resolved to 3 elements".to_owned(),
                 },
                 TestFailure {
+                    project: None,
                     title: "login".to_owned(),
                     message: "Timeout 5000ms exceeded".to_owned(),
                 },
@@ -142,7 +164,7 @@ mod tests {
         let rendered = err.to_string();
         for needle in [
             "playwright: 2 of 3 test cases failed",
-            "checkout: strict mode violation: resolved to 3 elements",
+            "[firefox] checkout: strict mode violation: resolved to 3 elements",
             "login: Timeout 5000ms exceeded",
         ] {
             if !rendered.contains(needle) {
@@ -160,6 +182,7 @@ mod tests {
             failed: 1,
             total: 1,
             failures: vec![TestFailure {
+                project: None,
                 title: "check-alarms".to_owned(),
                 message: "step 2 (tap: \"Alarmes\"): not found".to_owned(),
             }],

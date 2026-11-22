@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests run_steps and tap(text:): a step list is checked whole before it runs, and stops at its first failure.
 // ABOUTME: Uses StubInput and StubDescriber for the phone; the permission policy is the real one.
 
@@ -27,8 +39,8 @@ final class InlineStepRunnerTests: XCTestCase {
         let server = MCPServer(policy: policy, transport: .stdio)
         let registry = makeTestRegistry(bridge: StubBridge(), input: input, describer: describer)
         MirroirMCP.registerRunStepsTools(server: server, registry: registry, policy: policy)
-        MirroirMCP.registerInputTools(server: server, registry: registry)
-        MirroirMCP.registerTapTools(server: server, registry: registry)
+        MirroirMCP.registerInputTools(server: server, registry: registry, policy: policy)
+        MirroirMCP.registerTapTools(server: server, registry: registry, policy: policy)
         return server
     }
 
@@ -87,6 +99,77 @@ final class InlineStepRunnerTests: XCTestCase {
         XCTAssertEqual(describer.describeCallCount, 1, "only the final read: a point needs no OCR")
     }
 
+    // MARK: - A tap the screen did not answer
+
+    /// jfarcand/mirroir-mcp#84: on macOS 27.3 every tap reported PASS while
+    /// the screen never moved. The reply now says when the read after a text
+    /// tap matches the read it was found in.
+    func testATextTapOnAnUnchangedScreenSaysSo() {
+        let result = call(makeServer(policy: allowAll), "tap", ["text": .string("Search")])
+        XCTAssertFalse(result.isError, "an unchanged screen is a hint, not a failure: \(result.text)")
+        XCTAssertTrue(result.text.contains(
+            "The screen read the same before and after tapping \"Search\""), result.text)
+        XCTAssertTrue(result.text.hasSuffix("Screen now: Search Today"), result.text)
+    }
+
+    func testATextTapThatChangesTheScreenSaysNothingMore() {
+        let after = ScreenDescriber.DescribeResult(
+            elements: [TapPoint(text: "Games", tapX: 60, tapY: 100, confidence: 0.99)],
+            screenshotBase64: "")
+        describer.describeResults = [describer.describeResult, after]
+        let result = call(makeServer(policy: allowAll), "tap", ["text": .string("Search")])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertFalse(result.text.contains("read the same"), result.text)
+        XCTAssertTrue(result.text.hasSuffix("Screen now: Games"), result.text)
+    }
+
+    /// 2026-11-16, iPhone 16: an icon tap that opened nothing went unnoticed
+    /// because the status bar's clock and a badge read differently after it.
+    func testAClockThatTickedStillReadsAsTheSameScreen() {
+        let before = [TapPoint(text: "14:03", tapX: 60, tapY: 20, confidence: 0.9),
+                      TapPoint(text: "Horloge", tapX: 159, tapY: 159, confidence: 0.9),
+                      TapPoint(text: "Calendrier", tapX: 251, tapY: 159, confidence: 0.9)]
+        let after = [TapPoint(text: "14:04", tapX: 60, tapY: 20, confidence: 0.9),
+                     TapPoint(text: "Horloge", tapX: 159, tapY: 160, confidence: 0.9),
+                     TapPoint(text: "Calendrier", tapX: 251, tapY: 159, confidence: 0.9)]
+        XCTAssertTrue(InlineStepRunner.readsTheSame(before, after))
+        let opened = [TapPoint(text: "14:04", tapX: 60, tapY: 20, confidence: 0.9),
+                      TapPoint(text: "Chronomètre", tapX: 267, tapY: 857, confidence: 0.9)]
+        XCTAssertFalse(InlineStepRunner.readsTheSame(before, opened))
+    }
+
+    func testOnlyAFinalTextTapIsCompared() {
+        let typed = call(makeServer(policy: allowAll), "run_steps",
+                         steps(["tap: Search", "type: calculator"]))
+        XCTAssertFalse(typed.text.contains("read the same"), typed.text)
+        let point = call(makeServer(policy: allowAll), "run_steps", steps(["tap: @324,113"]))
+        XCTAssertFalse(point.text.contains("read the same"), "a point tap has no read before it")
+    }
+
+    // MARK: - Blocked apps (carnet#78)
+
+    /// A tap on a blocked app's Home Screen icon is refused before any input,
+    /// by text, by point and in a step list.
+    func testATapOnABlockedAppsIconSendsNothing() {
+        describer.describeResult = ScreenDescriber.DescribeResult(
+            elements: [TapPoint(text: "Horloge", tapX: 263, tapY: 289, confidence: 0.9),
+                       TapPoint(text: "Réglages", tapX: 263, tapY: 394, confidence: 0.9),
+                       TapPoint(text: "Q Rechercher", tapX: 215, tapY: 784, confidence: 0.9)],
+            screenshotBase64: "")
+        let policy = PermissionPolicy(skipPermissions: false, config: PermissionConfig(
+            allow: ["*"], blockedApps: ["Réglages"]))
+        let server = makeServer(policy: policy)
+        let byText = call(server, "tap", ["text": .string("Réglages")])
+        XCTAssertTrue(byText.isError, byText.text)
+        XCTAssertTrue(byText.text.contains("'Réglages' icon"), byText.text)
+        let byPoint = call(server, "tap", ["x": .number(263), "y": .number(350)])
+        XCTAssertTrue(byPoint.isError, byPoint.text)
+        let inSteps = call(server, "run_steps", steps(["tap: Horloge", "tap: Réglages"]))
+        XCTAssertTrue(inSteps.isError, inSteps.text)
+        XCTAssertEqual(input.tapCalls.map(\.y), [289 - SpotlightAppTile.iconTapLift],
+                       "only the allowed Horloge tap was sent, to its icon")
+    }
+
     func testTextThatLooksLikeNumbersIsStillText() {
         XCTAssertNil(TapStepPoint.parse("12,41"))
         XCTAssertNil(TapStepPoint.parse("@12"))
@@ -129,6 +212,18 @@ final class InlineStepRunnerTests: XCTestCase {
             return XCTFail("expected a denial, got \(refusal)")
         }
         XCTAssertEqual(index, 0)
+    }
+
+    /// carnet#78: steps that open an app themselves are checked for that app.
+    func testStepsThatOpenABlockedAppAreRefused() {
+        let policy = PermissionPolicy(skipPermissions: true,
+                                      config: PermissionConfig(blockedApps: ["Safari", "Settings"]))
+        for step in ["open_url: https://example.com", "set_network: wifi_off"] {
+            guard case .failure(.denied(let index, _, _)) = InlineStepRunner.prepare([step], policy: policy) else {
+                return XCTFail("\(step) must be refused while its app is blocked")
+            }
+            XCTAssertEqual(index, 0)
+        }
     }
 
     func testAMeasureIsCheckedForTheActionItRuns() {

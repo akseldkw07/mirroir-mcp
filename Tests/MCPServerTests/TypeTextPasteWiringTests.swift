@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests InputSimulation.typeText's clipboard wiring: no verifier fails a paste, the user's
 // ABOUTME: clipboard is restored exactly once whether every paste lands or one fails.
 
@@ -19,7 +31,7 @@ final class TypeTextPasteWiringTests: XCTestCase {
     private func makeInput(phone: SimulatedPhone, verifier: (any ScreenDescribing)?) -> InputSimulation {
         let bridge = StubBridge()
         bridge.processRunning = false
-        return InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY,
+        return InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY,
                                pasteVerifier: verifier,
                                keyPoster: phone, pasteboard: phone.pasteboard)
     }
@@ -80,25 +92,6 @@ final class TypeTextPasteWiringTests: XCTestCase {
 }
 
 // MARK: - Test doubles
-
-/// The Mac pasteboard as a value: records every write instead of touching the
-/// real general pasteboard the developer running the tests is using.
-private final class RecordingPasteboard: PasteboardAccessing, @unchecked Sendable {
-    private(set) var contents: String?
-    private(set) var writes: [String] = []
-
-    init(contents: String?) {
-        self.contents = contents
-    }
-
-    func string() -> String? { contents }
-
-    func replaceContents(with text: String) -> Bool {
-        writes.append(text)
-        contents = text
-        return true
-    }
-}
 
 /// Stands in for the iPhone's focused text field: key events type their
 /// character into it, and Cmd+V pastes the pasteboard into it (Universal

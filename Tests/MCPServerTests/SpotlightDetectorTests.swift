@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for SpotlightDetector: verifying Spotlight overlay detection from OCR elements.
 // ABOUTME: Covers English, French indicators and false-positive rejection for normal app screens.
 
@@ -113,6 +125,24 @@ final class SpotlightDetectorTests: XCTestCase {
         XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: english, name: "Clock"))
     }
 
+    /// iOS 27, 2026-11-16 (carnet#76): the top hit showed with no heading
+    /// above it; only the field said Return opens it.
+    func testAFieldSayingOpenNeedsNoHeading() {
+        let screen = [
+            point("Horloge — Ouvrir", 137, 101), point(icon, 168, 166), point("Horloge", 79, 266),
+            point("Régler le", 163, 265), point("Réglages", 76, 319),
+            point("Rechercher dans l'app Q", 287, 320),
+        ]
+        XCTAssertFalse(SpotlightDetector.holdsQuery(elements: screen))
+        XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: screen, name: "Horloge"))
+    }
+
+    func testAFieldNamingAnotherResultWithoutAHeadingIsNoApp() {
+        let screen = [point("M/t/o - Clinique dentaire St-Sauve", 189, 101), point(icon, 168, 166),
+                      point("Horloge", 79, 266)]
+        XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: screen, name: "Météo"))
+    }
+
     func testATileUnderTheHeadingCountsWhenTheFieldIsUnread() {
         let screen = [point("Meilleur résultat", 86, 107), point(icon, 81, 188), point("Météo", 79, 219)]
         XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: screen, name: "Clock"),
@@ -129,6 +159,35 @@ final class SpotlightDetectorTests: XCTestCase {
             point("Q M/t/o - Clinique dentaire St-Sauve", 189, 829),
         ]
         XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: screen, name: "Clock"))
+    }
+
+    /// XR, iOS 26, 2026-11-15 (carnet#74): OpenTable not installed. The top hit
+    /// was its App Store card, and the field still said Return opens it.
+    private var storeCardScreen: [TapPoint] {
+        [
+            point("Meilleur résultat", 86, 107), point("OpenTable", 165, 151), point("Obtenir", 342, 171),
+            point("Food & Drink", 167, 172), point(icon, 202, 174), point("Suggestions", 72, 253),
+            point("OpenTable", 111, 298), point(icon, 42, 299), point("OpenTable - Ouvrir", 158, 874),
+        ]
+    }
+
+    func testAnAppStoreCardAsTopHitIsNoApp() {
+        XCTAssertTrue(SpotlightDetector.firstResultIsStoreCard(elements: storeCardScreen, name: "OpenTable"))
+        XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: storeCardScreen, name: "OpenTable"))
+    }
+
+    func testAnAppStoreCardWithoutAHeadingIsNoApp() {
+        let screen = storeCardScreen.filter { $0.text != "Meilleur résultat" }
+        XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: screen, name: "OpenTable"))
+    }
+
+    func testAStoreButtonFarBelowAnInstalledAppDoesNotCount() {
+        let screen = [
+            point("Horloge — Ouvrir", 137, 101), point(icon, 168, 166), point("Horloge", 79, 266),
+            point("Horloge Mondiale", 165, 420), point("Obtenir", 342, 430),
+        ]
+        XCTAssertFalse(SpotlightDetector.firstResultIsStoreCard(elements: screen, name: "Horloge"))
+        XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: screen, name: "Horloge"))
     }
 
     func testNoTopHitMeansNoApp() {
@@ -178,6 +237,28 @@ final class SpotlightDetectorTests: XCTestCase {
                       point("Discover Zorbx's effective odor removal a...", 173, 176),
                       point("Buscar en App Store", 128, 377), point("Pedirle a Siri", 107, 483)]
         XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: screen, name: "Zorblax"))
+    }
+
+    /// iOS 27, 2026-11-16 (carnet#76): Spotlight opened as a bare field
+    /// over the Home Screen, with no suggestions; only its placeholder shows it.
+    func testABareSearchFieldIsSpotlight() {
+        let screen = [point("Rechercher ou demander", 172, 98), point("Horloge", 159, 159),
+                      point("Q Rechercher", 205, 736)]
+        XCTAssertTrue(SpotlightDetector.isSpotlightVisible(elements: screen))
+        XCTAssertFalse(SpotlightDetector.isSpotlightVisible(elements: [point("Q Rechercher", 205, 736)]),
+                       "the Home Screen's search pill is not Spotlight")
+    }
+
+    /// iPhone 16, iOS 27, 2026-11-18: Settings ends on its own "Q Rechercher"
+    /// field at the bottom edge. Read as the Home Screen, a tap on "Réseau
+    /// cellulaire" was lifted to the icon above the label and opened Bluetooth.
+    func testSettingsBottomSearchFieldIsNotTheHomeScreen() {
+        let settings = [point("Mode Avion", 129, 511), point("Wi-Fi", 106, 561), point("Bluetooth", 121, 614),
+                        point("Réseau cellulaire", 148, 667), point("Q Rechercher", 109, 838)]
+        XCTAssertFalse(SpotlightDetector.isHomeScreenVisible(elements: settings, windowHeight: 898))
+        XCTAssertTrue(SpotlightDetector.isHomeScreenVisible(
+            elements: [point("Horloge", 159, 159), point("Q Rechercher", 205, 736)], windowHeight: 898),
+                      "the Home Screen's pill sits above the Dock")
     }
 
     func testTheIdlePageHoldsNoQuery() {

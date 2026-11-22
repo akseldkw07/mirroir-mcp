@@ -1,0 +1,153 @@
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
+// ABOUTME: Tests launch_app's Home Screen route when Spotlight swallows the typed name (iOS 26, carnet#60).
+// ABOUTME: The screen follows the menu items pressed and the taps posted, as the iPhone's would.
+
+import CoreGraphics
+import HelperLib
+import XCTest
+@testable import mirroir_mcp
+
+/// Answers each read with what the iPhone shows given what was done so far.
+/// Stands in for the capture, which only the device can produce.
+private final class FollowingDescriber: ScreenDescribing, @unchecked Sendable {
+    var screen: () -> [TapPoint] = { [] }
+
+    func describe(settleTimeoutUs: UInt32?) -> ScreenDescriber.DescribeResult? {
+        ScreenDescriber.DescribeResult(elements: screen(), screenshotBase64: "img")
+    }
+}
+
+final class HomeScreenLaunchTests: XCTestCase {
+
+    private func el(_ text: String, _ x: Double, _ y: Double) -> TapPoint {
+        TapPoint(text: text, tapX: x, tapY: y, confidence: 0.9)
+    }
+
+    /// Clock, the app in front before launch_app.
+    private var clock: [TapPoint] { [el("00:00,00", 213, 303), el("Chronomètre", 267, 857)] }
+
+    /// Idle Spotlight that took none of the typing (XR, carnet#60).
+    private var idleSpotlight: [TapPoint] {
+        [el("Suggestions de Siri", 97, 109), el(CoreMLElementDetector.iconLabel, 171, 189),
+         el("Notes", 170, 218), el("Q Rechercher", 107, 872)]
+    }
+
+    /// A Home Screen page holding Rappels, with its search pill.
+    private var homePage: [TapPoint] {
+        [el("Notes", 70, 160), el("Rappels", 165, 160), el("Réglages", 260, 160),
+         el("Horloge", 355, 160), el("Q Rechercher", 205, 783)]
+    }
+
+    /// Rappels, once open.
+    private var rappels: [TapPoint] { [el("Mes listes", 120, 300), el("Épicerie", 140, 420)] }
+
+    private func launch(
+        name: String, home: @escaping (_ tapped: Bool) -> [TapPoint]
+    ) -> (error: String?, bridge: StubBridge, clicks: RecordingClickPoster) {
+        let bridge = StubBridge()
+        // A tap is a HID click, which needs the target in front: the stub reports
+        // the activation as done.
+        bridge.frontmost = true
+        bridge.windowInfo = WindowInfo(
+            windowID: 4242, position: CGPoint(x: 100, y: 50),
+            size: CGSize(width: 410, height: 898), pid: 777)
+        let clicks = RecordingClickPoster()
+        let describer = FollowingDescriber()
+        let idle = idleSpotlight
+        let front = clock
+        describer.screen = {
+            let items = bridge.menuActionCalls.map(\.item)
+            if items.contains("Home Screen") { return home(!clicks.clicks.isEmpty) }
+            return items.count % 2 == 1 ? idle : front
+        }
+        let input = InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY,
+                                    pasteVerifier: describer, keyPoster: RecordingKeyPoster(),
+                                    clickPoster: clicks, pasteboard: RecordingPasteboard(contents: nil),
+                                    pointOwner: TargetOwnsEveryPoint(pid: 777),
+                                    windowPoster: RecordingWindowPoster(), macFront: inertMac)
+        return (input.launchApp(name: name), bridge, clicks)
+    }
+
+    /// A Mac with no front owner: the key calls' handback has nothing to return,
+    /// and no real window is brought forward.
+    private var inertMac: MacFront {
+        MacFront(ownerPID: { nil }, bringForward: { _ in }, pointer: { nil }, movePointer: { _ in })
+    }
+
+    func testANameSpotlightIgnoresIsOpenedFromItsHomeScreenIcon() {
+        let page = homePage
+        let opened = rappels
+        let run = launch(name: "Rappels") { tapped in tapped ? opened : page }
+        XCTAssertNil(run.error, run.error ?? "")
+        XCTAssertEqual(run.bridge.menuActionCalls.map(\.item), ["Spotlight", "Home Screen"],
+                       "Spotlight opened, then Home, which closes it: the toggle is not pressed again")
+        XCTAssertEqual(run.clicks.clicks.first?.point,
+                       CGPoint(x: 100 + 165, y: 50 + 160 - SpotlightAppTile.iconTapLift),
+                       "inside the Rappels icon, above its label (no icon was detected); the window sits at 100, 50")
+    }
+
+    /// carnet#81, XR 2026-11-16: a label tap opened nothing; the icon's center does.
+    func testADetectedIconIsTappedAtItsCenter() {
+        let label = el("Horloge", 262, 290)
+        let icons = [el(CoreMLElementDetector.iconLabel, 262, 245), el(CoreMLElementDetector.iconLabel, 357, 245)]
+        let point = HomeScreenAppIcon.tapPoint(for: label, in: icons + [label])
+        XCTAssertEqual(point.x, 262)
+        XCTAssertEqual(point.y, 245)
+    }
+
+    func testAnIconBesideTheLabelIsNotItsIcon() {
+        let label = el("Horloge", 262, 290)
+        let point = HomeScreenAppIcon.tapPoint(for: label, in: [el(CoreMLElementDetector.iconLabel, 357, 245), label])
+        XCTAssertEqual(point.y, 290 - SpotlightAppTile.iconTapLift, "App Store's icon is not Horloge's")
+    }
+
+    func testAHomeScreenThatNeverShowsFailsWithTheSpotlightOnceExplanation() {
+        let front = clock
+        let run = launch(name: "Rappels") { _ in front }
+        let error = run.error ?? ""
+        XCTAssertEqual(error, InputSimulation.spotlightIgnoredTyping(
+            name: "Rappels", homeFailure: "the Home Screen did not show (its search pill was not found)"))
+        XCTAssertTrue(error.contains("can take typing only once"), error)
+        XCTAssertFalse(error.contains("quit"), "the old remedy, quitting iPhone Mirroring, is gone")
+        XCTAssertFalse(error.contains(AgentInstruction.waitForUser), "no stop instruction")
+        XCTAssertTrue(run.clicks.clicks.isEmpty, "nothing was tapped")
+        XCTAssertEqual(run.bridge.menuActionCalls.map(\.item), ["Spotlight", "Home Screen"])
+    }
+
+    /// An app on another page fails honestly: no page is turned, because a
+    /// drag across the icon grid can move icons into a folder (XR, 2026-11-12).
+    func testAnAppNotOnTheShownPageFailsWithoutTurningAPage() {
+        let page = homePage
+        let run = launch(name: "Calendrier") { _ in page }
+        let error = run.error ?? ""
+        XCTAssertTrue(error.contains("no icon is labeled exactly 'Calendrier' on the Home Screen page that shows"),
+                      error)
+        XCTAssertTrue(error.contains("Other pages are not turned to"), error)
+        XCTAssertTrue(run.clicks.clicks.isEmpty, "no icon was tapped")
+        XCTAssertEqual(run.bridge.menuActionCalls.map(\.item), ["Spotlight", "Home Screen"],
+                       "Home is pressed once and the phone stays there")
+    }
+
+    /// An icon tapped while the Home Screen stays is not a launch.
+    func testAnIconTapThatLeavesTheHomeScreenUpIsNotALaunch() {
+        let page = homePage
+        let run = launch(name: "Rappels") { _ in page }
+        XCTAssertEqual(run.error, InputSimulation.spotlightIgnoredTyping(
+            name: "Rappels", homeFailure: "the 'Rappels' icon was tapped but the Home Screen still shows"))
+        XCTAssertEqual(run.clicks.clicks.count, 1, "one click")
+    }
+}

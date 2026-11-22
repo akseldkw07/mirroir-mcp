@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Enters segmented text — keystrokes for keyed runs, one clipboard paste per unmappable run.
 // ABOUTME: Each paste is confirmed on screen by OCR before the next write; keyed text is read back for autocorrect.
 
@@ -38,7 +50,12 @@ struct VerifiedTextEntry {
 
     /// Enter every segment in order. Success only when every keyed run was
     /// posted and every pasted run was seen on screen.
-    func enter(_ segments: [InputSimulation.TypeSegment]) -> TypeResult {
+    func enter(_ segments: [InputSimulation.TypeSegment], misreadings: [String] = []) -> TypeResult {
+        let keyedOnly = segments.allSatisfy { $0.method == .keyEvent }
+        // What the screen held before any key, so the read-back counts only
+        // text the keys added: the typed word is often on screen already (an
+        // icon label behind Spotlight, a search result).
+        let before = keyedOnly ? readScreen() : nil
         var entered = ""
         for (index, segment) in segments.enumerated() {
             let remaining = segments[index...].map(\.text).joined()
@@ -56,43 +73,59 @@ struct VerifiedTextEntry {
                 entered += segment.text
             }
         }
-        let keyedOnly = segments.allSatisfy { $0.method == .keyEvent }
-        return TypeResult(success: true, error: nil,
-                          notice: keyedOnly ? keyedReadBack(entered) : nil)
+        guard keyedOnly else { return TypeResult(success: true, error: nil) }
+        let readBack = keyedReadBack(entered, before: before ?? [], misreadings: misreadings)
+        return TypeResult(success: true, error: nil, notice: readBack.notice,
+                          misreadingShown: readBack.misread)
     }
 
     /// Read typed text back from the screen. iOS autocorrect rewrites keystrokes
     /// at each word boundary ("teh" becomes "the" in Notes), so the field can
     /// hold other text than was typed. The text counts as shown when its
     /// readable characters appear in the screen's lines read in order, which
-    /// keeps a line the field wrapped whole. Nil when it is shown, when it has
-    /// nothing OCR could read, or when the screen cannot be read at all;
-    /// otherwise a notice saying what was not seen. It is a notice, not a
-    /// failure: every keystroke was posted, and a password field shows dots.
-    private func keyedReadBack(_ typed: String) -> String? {
+    /// keeps a line the field wrapped whole, more often than in `before`, the
+    /// read taken before the first key: text already on screen proves nothing.
+    /// Nil when it is shown, when it has nothing OCR could read, or when the
+    /// screen cannot be read at all; otherwise a notice saying what was not
+    /// seen. It is a notice, not a failure: every keystroke was posted, and a
+    /// password field shows dots. `misread` says the screen newly shows one
+    /// of `misreadings` instead: what the keys type on another keyboard layout.
+    private func keyedReadBack(
+        _ typed: String, before: [String], misreadings: [String]
+    ) -> (notice: String?, misread: Bool) {
         let needle = PasteNeedle.readable(typed, foldingCase: false)
-        guard !needle.isEmpty else { return nil }
+        guard !needle.isEmpty else { return (nil, false) }
+        let shownBefore = PasteNeedle.readable(before.joined(), foldingCase: false)
+        let exactBefore = PasteNeedle.count(needle, in: shownBefore)
+        let foldedBefore = PasteNeedle.count(needle.lowercased(), in: shownBefore.lowercased())
+        let misneedles = misreadings.map { PasteNeedle.readable($0) }.filter { !$0.isEmpty }
+        let misBefore = misneedles.map { PasteNeedle.count($0, in: shownBefore.lowercased()) }
         var screenRead = false
         var recased = false
+        var misread = false
         for _ in 0 ..< Self.readBackReads {
             sleep(verifyPollUs)
             guard let lines = readScreen() else { continue }
             screenRead = true
             let shown = PasteNeedle.readable(lines.joined(), foldingCase: false)
-            if shown.contains(needle) { return nil }
-            recased = recased || shown.lowercased().contains(needle.lowercased())
+            if PasteNeedle.count(needle, in: shown) > exactBefore { return (nil, false) }
+            recased = recased
+                || PasteNeedle.count(needle.lowercased(), in: shown.lowercased()) > foldedBefore
+            misread = misread || zip(misneedles, misBefore).contains { mis, before in
+                PasteNeedle.count(mis, in: shown.lowercased()) > before
+            }
         }
-        guard screenRead else { return nil }
+        guard screenRead else { return (nil, false) }
         if recased {
-            return "Every keystroke was sent, but the iPhone changed the capitalization of "
+            return ("Every keystroke was sent, but the iPhone changed the capitalization of "
                 + "\"\(typed)\" (it capitalizes the start of a sentence, for example). Read the "
-                + "field if the exact case matters."
+                + "field if the exact case matters.", false)
         }
-        return "Every keystroke was sent, but \"\(typed)\" is not what the screen shows. " +
+        return ("Every keystroke was sent, but \"\(typed)\" is not what the screen shows. " +
             "The iPhone may have autocorrected it (for example \"teh\" to \"the\", or " +
             "English words rewritten by a French keyboard); read the field before relying " +
             "on its text. A password field hides what it holds, so this notice is " +
-            "expected there."
+            "expected there.", misread)
     }
 
     /// Screen reads the keyed read-back makes, each after one `verifyPollUs` gap.
@@ -135,7 +168,8 @@ struct VerifiedTextEntry {
             "within \(seconds)s. The clipboard path needs Universal Clipboard (Handoff " +
             "on the Mac and the iPhone, Bluetooth and Wi-Fi on, same iCloud account); " +
             "a lagging sync pastes the device's previous clipboard instead. Non-Latin " +
-            "scripts are only readable when `ocrLanguages` includes them."
+            "scripts are only readable when OCR reads their language: the Mac's " +
+            "preferred languages, or `ocrLanguages` when set."
     }
 
     /// A failure naming what was confirmed delivered and what was not.
@@ -172,6 +206,11 @@ enum PasteNeedle {
         let needle = readable(text)
         guard !needle.isEmpty else { return false }
         return occurrences(of: needle, in: after) > occurrences(of: needle, in: before)
+    }
+
+    /// How many times `needle` appears in `text`, both already normalized.
+    static func count(_ needle: String, in text: String) -> Int {
+        text.components(separatedBy: needle).count - 1
     }
 
     /// How many times `needle` appears across `lines`, each line normalized

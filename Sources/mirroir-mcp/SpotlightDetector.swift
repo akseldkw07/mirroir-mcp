@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Detects Spotlight search overlay on the iPhone screen via OCR element analysis.
 // ABOUTME: Used after app launch (explorer and launch_app) to verify the app opened instead of Spotlight lingering.
 
@@ -37,20 +49,45 @@ enum SpotlightDetector {
         }
     }
 
+    /// The whole label of the button an App Store result shows for an app that
+    /// is not installed ("Obtenir"). Pattern data: `## Spotlight Store Button`
+    /// in `system-phrases.md`.
+    static var storeButtonLabels: [String] { SystemPhrases.live.phrases(.spotlightStoreButton) }
+
+    /// Widest vertical gap, in points, between a store result's name and its
+    /// button (20pt measured on an XR).
+    static let storeButtonReach = 40.0
+
     /// Whether Return would open an app, not a web suggestion, an App Store page
     /// or a message: Spotlight has a top result, and either the search field says
     /// it opens it, or the result is a tile. Spotlight does not always show the
     /// heading (Spanish iPhone, 2026-11-08: field at the top, the top result's
     /// tile and shortcuts, no heading), so a field that says it opens `name`
-    /// counts on its own. Looks at the screen before Return because nothing
-    /// afterwards names the app in front.
+    /// counts on its own. Neither counts when the first result named `name` is
+    /// an App Store card: the field says it opens that card too. Looks at the
+    /// screen before Return because nothing afterwards names the app in front.
     static func returnOpensApp(elements: [TapPoint], name: String) -> Bool {
+        if firstResultIsStoreCard(elements: elements, name: name) { return false }
         guard holdsQuery(elements: elements) else {
             return elements.contains { fieldOpens($0, name: name) }
                 || SpotlightAppTile.headsFirstRow(name, in: elements)
         }
         return elements.contains { fieldOpens($0, name: nil) }
             || SpotlightAppTile.topHit(in: elements) != nil
+    }
+
+    /// Whether the highest result whose text is `name` has a store button on its
+    /// row: the App Store's card for an app that is not installed. The field's
+    /// own text ("OpenTable — Ouvrir") never reads as `name` alone.
+    static func firstResultIsStoreCard(elements: [TapPoint], name: String) -> Bool {
+        let target = normalize(name)
+        guard !target.isEmpty,
+              let result = elements.filter({ normalize($0.text) == target }).min(by: { $0.tapY < $1.tapY })
+        else { return false }
+        return elements.contains { element in
+            storeButtonLabels.contains(SystemPhrases.fold(element.text.trimmingCharacters(in: .whitespaces)))
+                && abs(element.tapY - result.tapY) <= storeButtonReach
+        }
     }
 
     /// Whether `element` reads as the field's completion: the query, a dash, then
@@ -80,9 +117,41 @@ enum SpotlightDetector {
         }
     }
 
-    /// Fraction of the window height below which Spotlight's search field sits.
-    /// iOS keeps the field docked at the bottom in both orientations.
-    static let searchFieldBandStart = 0.8
+    /// The fractions of the window height where Spotlight's search field can sit.
+    /// iOS 26 docks it at the bottom (an XR, 430x942: y 872 of 942, and an
+    /// iOS 27 phone on 2026-11-04: y 829 of 898); iOS 27 was also seen with it
+    /// at the top (2026-11-12, 410x898). The field is taken in either band, so
+    /// the layout on screen decides, not the iOS version.
+    static let searchFieldBands: [ClosedRange<Double>] = [0.0 ... 0.2, 0.8 ... 1.0]
+
+    /// Fraction of the window height below which the Home Screen's search pill
+    /// sits. Only the bottom: an app opening on a search field at its top
+    /// ("Q Rechercher" in Settings) must not read as the Home Screen.
+    static let homeSearchPillBandStart = 0.8
+
+    /// Fraction of the window height above which the Home Screen's search
+    /// pill sits: the Dock is below it (iPhone 16 at 736 of 898, XR at 783 of
+    /// 942, 82-83%). Settings' own search field on iOS 26 and 27 ("Q
+    /// Rechercher" at 838 of 898) and Spotlight's idle field (872 of 942) sit
+    /// at the bottom edge, 93%, and are not the Home Screen.
+    static let homeSearchPillBandEnd = 0.88
+
+    /// Whether `y` lies in one of Spotlight's search-field bands of a window
+    /// `windowHeight` points tall.
+    static func isInSearchFieldBand(_ y: Double, windowHeight: Double) -> Bool {
+        searchFieldBands.contains { band in
+            (band.lowerBound * windowHeight ... band.upperBound * windowHeight).contains(y)
+        }
+    }
+
+    /// The text Spotlight's search field shows after its magnifier glyph, or
+    /// nil when no element in a search-field band reads as the field.
+    static func searchFieldQuery(elements: [TapPoint], windowHeight: Double) -> String? {
+        elements.lazy
+            .filter { isInSearchFieldBand($0.tapY, windowHeight: windowHeight) }
+            .compactMap { searchFieldText($0.text) }
+            .first
+    }
 
     /// Shortest normalized text treated as an echo of the query, so single
     /// OCR glyphs never count.
@@ -92,8 +161,9 @@ enum SpotlightDetector {
     ///
     /// When Spotlight finds nothing, it shows no "Top Hit" label — only a blurred
     /// background and the search field, which OCR reads with the magnifier glyph
-    /// first ("Q Maps"). The glyph is required: an app's own bottom text (a
-    /// "Horloges" tab after launching Horloge) must not count. OCR may truncate
+    /// first ("Q Maps"), at the bottom or the top of the screen (`searchFieldBands`).
+    /// The glyph is required: an app's own bottom text (a "Horloges" tab after
+    /// launching Horloge) must not count. OCR may truncate
     /// the text, so the field's text and the query only need to be prefixes of
     /// one another once normalized.
     static func isQueryEchoedInSearchField(
@@ -101,9 +171,9 @@ enum SpotlightDetector {
     ) -> Bool {
         let target = normalize(query)
         guard target.count >= minEchoLength else { return false }
-        let bandTop = windowHeight * searchFieldBandStart
         return elements.contains { el in
-            guard el.tapY >= bandTop, let field = searchFieldText(el.text) else { return false }
+            guard isInSearchFieldBand(el.tapY, windowHeight: windowHeight),
+                  let field = searchFieldText(el.text) else { return false }
             let text = normalize(field)
             guard text.count >= minEchoLength else { return false }
             return target.hasPrefix(text) || text.hasPrefix(target)
@@ -117,9 +187,14 @@ enum SpotlightDetector {
 
     /// Whether the home screen's search pill is showing, i.e. no app is in front.
     static func isHomeScreenVisible(elements: [TapPoint], windowHeight: Double) -> Bool {
-        let bandTop = windowHeight * searchFieldBandStart
-        return elements.contains { el in
-            guard el.tapY >= bandTop, let field = searchFieldText(el.text) else { return false }
+        homeSearchPill(in: elements, windowHeight: windowHeight) != nil
+    }
+
+    /// The Home Screen's search pill, the last row above the Dock, or nil.
+    static func homeSearchPill(in elements: [TapPoint], windowHeight: Double) -> TapPoint? {
+        let band = windowHeight * homeSearchPillBandStart ... windowHeight * homeSearchPillBandEnd
+        return elements.first { el in
+            guard band.contains(el.tapY), let field = searchFieldText(el.text) else { return false }
             return homeSearchPillLabels.contains(SystemPhrases.fold(field))
         }
     }
@@ -170,7 +245,7 @@ enum SpotlightDetector {
     static let searchGlyphPrefixes: [String] = ["Q ", "🔍"]
 
     /// The text after the magnifier glyph, or nil when `text` does not start with it.
-    private static func searchFieldText(_ text: String) -> String? {
+    static func searchFieldText(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         for glyph in searchGlyphPrefixes where trimmed.hasPrefix(glyph) {
             return String(trimmed.dropFirst(glyph.count)).trimmingCharacters(in: .whitespaces)

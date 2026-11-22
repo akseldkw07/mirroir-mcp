@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: The words iOS itself draws on its system screens, parsed from Resources/system-phrases.md compiled into the binary.
 // ABOUTME: The iPhone's language is unknown to the Mac, so the file is a union across languages that anyone can extend.
 
@@ -26,6 +38,10 @@ struct SystemPhrases: Sendable, Equatable {
         case spotlightTopHit = "Spotlight Top Hit"
         /// The whole word the search field adds when Return would open an app.
         case spotlightOpen = "Spotlight Open"
+        /// The whole label of an App Store result's button for an app not installed.
+        case spotlightStoreButton = "Spotlight Store Button"
+        /// Fragments of a turn-by-turn navigation screen, `.*` standing for any text.
+        case navigation = "Navigation"
         /// Other fragments shown only while Spotlight covers the screen.
         case spotlightOverlay = "Spotlight Overlay"
         /// The whole label of the Home Screen's search pill.
@@ -34,6 +50,18 @@ struct SystemPhrases: Sendable, Equatable {
         case alertDismiss = "Alert Dismiss"
         /// Fragments of a system alert's title, `.*` standing for any text.
         case alertTitle = "Alert Title"
+        /// The Settings app's name, which set_network opens.
+        case settingsApp = "Settings App"
+        /// The Settings row holding the Airplane Mode switch.
+        case settingsAirplaneRow = "Settings Airplane Row"
+        /// The Settings row that opens the Wi-Fi page.
+        case settingsWiFiRow = "Settings Wi-Fi Row"
+        /// The row on the Wi-Fi page holding the Wi-Fi switch.
+        case settingsWiFiSwitch = "Settings Wi-Fi Switch"
+        /// The Settings row that opens the cellular page.
+        case settingsCellularRow = "Settings Cellular Row"
+        /// The row on the cellular page holding the cellular data switch.
+        case settingsCellularSwitch = "Settings Cellular Switch"
     }
 
     /// Each section's bullets, folded with `fold`, in file order.
@@ -54,6 +82,15 @@ struct SystemPhrases: Sendable, Equatable {
     /// curly apostrophe iOS draws read as a straight one.
     static func fold(_ text: String) -> String {
         text.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")
+    }
+
+    /// Whether folded `text` contains `pattern`, where a `.*` in the pattern
+    /// stands for any text between its two parts.
+    static func matches(_ text: String, pattern: String) -> Bool {
+        let parts = pattern.components(separatedBy: ".*")
+        guard parts.count == 2 else { return text.contains(pattern) }
+        guard let first = text.range(of: parts[0]) else { return false }
+        return text[first.upperBound...].contains(parts[1])
     }
 
     /// The bullets under each known `##` heading, folded, in file order.

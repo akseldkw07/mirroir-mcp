@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests the cover guard: pointing input is refused when another app owns an input point.
 // ABOUTME: Window captures show the target even when covered, but posted input lands on whatever is on top.
 
@@ -34,7 +46,7 @@ final class CoverGuardTests: XCTestCase {
     override func setUp() {
         super.setUp()
         owner = StubPointOwner()
-        input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY,
+        input = InputSimulation(bridge: StubBridge(), keyboardLayouts: .usQWERTY,
                                 pointOwner: owner)
     }
 

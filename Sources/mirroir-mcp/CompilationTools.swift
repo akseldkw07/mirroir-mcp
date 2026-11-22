@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Registers MCP tools for AI-driven skill compilation (record_step, save_compiled).
 // ABOUTME: Derives hints from the steps the AI reports; save_compiled delegates to SaveCompiledHandler.
 
@@ -49,7 +61,7 @@ extension MirroirMCP {
                     "type": .object([
                         "type": .string("string"),
                         "description": .string(
-                            "Step type (tap, wait_for, launch, type, press_key, swipe, " +
+                            "Step type (tap, wait_for, launch, type, clear_field, press_key, swipe, " +
                             "scroll_to, assert_visible, assert_not_visible, home, open_url, " +
                             "shake, reset_app, set_network, screenshot, long_press, drag, " +
                             "target, measure)"),
@@ -64,7 +76,8 @@ extension MirroirMCP {
                             "network mode, `\"Element\" duration: 1000` for long_press, " +
                             "`{ from: \"A\", to: \"B\" }` for drag, `{ kind: ios, app: \"Notes\" }` " +
                             "for target, `{ tap: \"Login\", until: \"Dashboard\", max: 5, " +
-                            "name: \"login_time\" }` for measure. Omit for home and shake. " +
+                            "name: \"login_time\" }` for measure. Omit for home, shake and clear_field " +
+                            "(record type_text with clear=true as clear_field, then type). " +
                             "save_compiled stores a value the skill takes from `${VAR}` as that " +
                             "placeholder, so secrets stay out of the compiled file."),
                     ]),
@@ -353,7 +366,7 @@ extension MirroirMCP {
             let direction = scrollDirection ?? ScrollDirection.down.rawValue
             return .scrollSequence(count: count, direction: direction)
 
-        case "launch", "type", "press_key", "swipe", "home", "open_url",
+        case "launch", "type", SkillParser.clearFieldKey, "press_key", "swipe", "home", "open_url",
              "shake", "reset_app", "set_network", "screenshot", "target", "switch_target",
              "long_press", "drag":
             return .passthrough()

@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Pure resolution of iPhone Mirroring window geometry and connection state from live snapshots.
 // ABOUTME: Picks the window server's bounds for the mirroring window and classifies the paused overlay.
 
@@ -26,6 +38,14 @@ enum MirroringWindowResolver {
         "app.grid.3x3", "iphone.app.switcher",
     ]
 
+    /// Identifiers of the Mac's own text-input UI drawn over the window while
+    /// keys are typed into it: the autocorrection bubble ("Horloge" with a
+    /// close button after typing "horloge"). It belongs to the Mac, not to
+    /// an interruption, and goes away with the next keystroke or click.
+    static let macTextInputIdentifiers: Set<String> = [
+        "NSAutocorrectionSuggestion",
+    ]
+
     /// Resolve the mirroring window's live geometry.
     ///
     /// The window server's bounds are authoritative: AX geometry can lag after
@@ -33,6 +53,12 @@ enum MirroringWindowResolver {
     /// title first, which stays correct when the AX size is the lagging value;
     /// a size match against AX identifies it when the window server exposes no
     /// titles. AX geometry is reported only when neither identifies a window.
+    ///
+    /// One exception: when the window server shows the window as a thumbnail
+    /// (the Stage Manager strip, Mission Control), its bounds are that scaled
+    /// copy while AX keeps the frame the window takes once it is shown. The
+    /// AX frame is then reported, with the window server's ID for capture;
+    /// see `isThumbnail`.
     /// Returns nil when nothing identifies a window and AX has no frame.
     static func windowInfo(
         pid: pid_t, axWindow: MirroringAXWindow, windowList: [WindowListEntry]
@@ -40,6 +66,10 @@ enum MirroringWindowResolver {
         let owned = windowList.filter { $0.ownerPID == pid }
         if let entry = titleMatch(owned, title: axWindow.title)
             ?? axWindow.frame.flatMap({ sizeMatch(owned, size: $0.size) }) {
+            if let frame = axWindow.frame, isThumbnail(entry.bounds.size, of: frame.size) {
+                return WindowInfo(
+                    windowID: entry.windowID, position: frame.origin, size: frame.size, pid: pid)
+            }
             return WindowInfo(
                 windowID: entry.windowID, position: entry.bounds.origin,
                 size: entry.bounds.size, pid: pid)
@@ -94,6 +124,20 @@ enum MirroringWindowResolver {
         phrases.isResumeControl(label: label)
     }
 
+    /// Largest share of the AX frame's area a window-server size may cover
+    /// and still be read as a thumbnail of it. Measured on macOS 26.5: the
+    /// Stage Manager strip shows a 430x942 window at 47x141 (1.6% of its
+    /// area), Mission Control at 228x499 (28%). A rotation keeps the area and
+    /// a resize of the mirroring window changes it far less than half.
+    static let thumbnailAreaRatio: CGFloat = 0.5
+
+    /// Whether `shown` is a scaled-down presentation of a window whose real
+    /// size is `frame`, rather than the window itself.
+    static func isThumbnail(_ shown: CGSize, of frame: CGSize) -> Bool {
+        let frameArea = frame.width * frame.height
+        return frameArea > 0 && shown.width * shown.height < frameArea * thumbnailAreaRatio
+    }
+
     // MARK: - Private
 
     private static func titleMatch(_ entries: [WindowListEntry], title: String?) -> WindowListEntry? {
@@ -136,7 +180,7 @@ enum MirroringWindowResolver {
     /// The strongest overlay content in `node` and its descendants. Toolbar
     /// chrome is skipped whole.
     static func overlayContent(_ node: AXNodeSnapshot) -> OverlayContent {
-        if isToolbarControl(node) { return .none }
+        if isChrome(node) { return .none }
         let hasLabel = !(node.label?.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
         var own = OverlayContent.none
         if node.role == kAXButtonRole as String {
@@ -145,6 +189,30 @@ enum MirroringWindowResolver {
             own = .labeled
         }
         return ([own] + node.children.map(overlayContent)).max() ?? own
+    }
+
+    /// Identifiers of iPhone Mirroring's own accessory windows, which can be
+    /// its main window while open: never the mirror.
+    static let accessoryWindowIdentifiers: Set<String> = [
+        "com_apple_SwiftUI_Settings_window",
+    ]
+
+    /// Index of the first window in `identifiers` (the main window, then the
+    /// app's windows) that is not an accessory window, or nil.
+    static func mirrorWindowIndex(identifiers: [String?]) -> Int? {
+        identifiers.firstIndex { identifier in
+            guard let identifier else { return true }
+            return !accessoryWindowIdentifiers.contains(identifier)
+        }
+    }
+
+    /// Whether `node` is chrome the Mac draws over a live session: a window
+    /// or toolbar control, or the Mac's text-input UI. Skipped whole.
+    static func isChrome(_ node: AXNodeSnapshot) -> Bool {
+        if let identifier = node.identifier, macTextInputIdentifiers.contains(identifier) {
+            return true
+        }
+        return isToolbarControl(node)
     }
 
     /// Whether `node` is a window control or a toolbar button: chrome that

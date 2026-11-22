@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Doctor's end-to-end proof that the iPhone screen can be read: one capture of the mirror, then OCR on it.
 // ABOUTME: Catches a Screen Recording grant that is on but not yet in effect, which the permission bit alone reports as fine.
 
@@ -16,17 +28,16 @@ enum DoctorCaptureCheck {
     static let name = "Screen read"
 
     /// Capture the mirror and OCR it, read-only: nothing is tapped or typed.
-    static func run(hostApp: String?) -> DoctorCheck {
+    static func run(grantee: HostApp.Grantee?) -> DoctorCheck {
         let target = IPhoneMirroringTarget.build(config: nil)
         let size = target.bridge.getWindowInfo()?.size
-        return verdict(target.ocrDescriber.describe(settleTimeoutUs: 0), windowSize: size, hostApp: hostApp)
+        return verdict(target.ocrDescriber.describe(settleTimeoutUs: 0), windowSize: size, grantee: grantee)
     }
 
     /// The check for what one describe of the mirror returned.
     static func verdict(_ result: ScreenDescriber.DescribeResult?, windowSize: CGSize?,
-                        hostApp: String?) -> DoctorCheck {
-        let restart = "quit and reopen \(hostApp.map { "\"\($0)\"" } ?? "the app that runs mirroir-mcp"): "
-            + "a Screen Recording grant takes effect only after a restart."
+                        grantee: HostApp.Grantee?) -> DoctorCheck {
+        let restart = PermissionGuidance.restart(grantee) + ": a Screen Recording grant takes effect only after a restart."
         let dimensions = windowSize.map { "\(Int($0.width))x\(Int($0.height))" } ?? "unknown size"
         guard let result else {
             return DoctorCheck(name: name, status: .failed, detail: "no frame captured",

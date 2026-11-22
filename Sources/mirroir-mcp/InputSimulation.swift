@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Simulates user input (tap, swipe, keyboard) on the iPhone Mirroring window.
 // ABOUTME: Uses CGEvent for all input — pointing (tap, swipe, drag) and keyboard (type, press_key, shake).
 
@@ -18,6 +30,9 @@ struct TypeResult {
     /// not what the screen shows (the iPhone autocorrected it, or the field
     /// hides its text). Nil when nothing needs saying.
     var notice: String? = nil
+    /// The screen newly shows what the keys type on another configured
+    /// keyboard layout instead of the text: the phone uses that layout.
+    var misreadingShown = false
 }
 
 /// Controls how the mouse cursor is managed during coordinate-based operations.
@@ -43,10 +58,13 @@ enum CursorMode: Sendable {
 final class InputSimulation: Sendable {
     let bridge: any WindowBridging
     private let cursorMode: CursorMode
-    /// The iPhone's hardware keyboard layout: which physical keys type each
+    /// The iPhones' hardware keyboard layouts: which physical keys type each
     /// character. CGEvent keycodes are physical keys and the iPhone applies its
-    /// own layout to them, so text is typed through this table.
-    let keyboardLayout: IPhoneKeyboardLayout
+    /// own layout to them, so text is typed through these tables.
+    let keyboardLayouts: KeyboardLayoutSet
+    /// The layout given for each phone, which decides the characters the
+    /// layouts type with different keys.
+    let layoutAnswers: KeyboardLayoutAnswers
     /// The persistent touch contact shared by every target; while it is held,
     /// pointing operations refuse and no escape click is posted.
     let touchSession: TouchSession
@@ -96,7 +114,8 @@ final class InputSimulation: Sendable {
     }
 
     init(bridge: any WindowBridging, cursorMode: CursorMode = .direct,
-         keyboardLayout override: IPhoneKeyboardLayout? = nil,
+         keyboardLayouts override: KeyboardLayoutSet? = nil,
+         layoutAnswers: KeyboardLayoutAnswers? = nil,
          touchSession: TouchSession = .shared,
          gestureDevice: GestureDevice = .live,
          heldInputPoster: any HeldInputPosting = CGEventHeldInputPoster(),
@@ -128,9 +147,10 @@ final class InputSimulation: Sendable {
         self.touchSession = touchSession
         self.gestureDevice = gestureDevice
         self.heldInputPoster = heldInputPoster
-        // The configured iPhone layout (settings.json `keyboardLayout` or
+        // The configured iPhone layouts (settings.json `keyboardLayout` or
         // IPHONE_KEYBOARD_LAYOUT) unless the caller pins one.
-        self.keyboardLayout = override ?? IPhoneKeyboardLayout.configured()
+        self.keyboardLayouts = override ?? .configured()
+        self.layoutAnswers = layoutAnswers ?? KeyboardLayoutAnswers()
     }
 
     /// Verify that the target window is connected and accepting input.
@@ -235,13 +255,14 @@ final class InputSimulation: Sendable {
             return (nil, false, stateError, nil)
         }
 
-        guard var info = bridge.getWindowInfo() else {
+        guard let firstRead = bridge.getWindowInfo() else {
             DebugLog.log(tag, "ERROR: window not found")
             return (nil, false, "Target '\(bridge.targetName)' window not found", nil)
         }
 
-        if let boundsError = validateBounds(x: x, y: y, info: info, tag: tag) {
-            return (nil, false, boundsError, nil)
+        let bounded = windowContaining(x: x, y: y, info: firstRead, tag: tag)
+        guard var info = bounded.info else {
+            return (nil, false, bounded.error, nil)
         }
 
         logWindowState(tag, info)
@@ -313,23 +334,6 @@ final class InputSimulation: Sendable {
     func restoreCursor(_ savedPosition: CGPoint?) {
         guard let pos = savedPosition else { return }
         CGWarpMouseCursorPosition(pos)
-    }
-
-    /// Validate that coordinates fall within the iPhone Mirroring window bounds.
-    /// Returns nil if valid, or a descriptive error message if out of bounds.
-    func validateBounds(x: Double, y: Double, info: WindowInfo, tag: String) -> String? {
-        let w = Double(info.size.width)
-        let h = Double(info.size.height)
-        // Written as a refusal of anything not inside, so a value that is not
-        // a number at all is refused too; and printed without converting to
-        // Int, which traps on a value no integer holds.
-        if !(x >= 0 && x <= w && y >= 0 && y <= h) {
-            let whole = ScreenshotGeometry.whole
-            let msg = "Coordinates (\(whole(x)), \(whole(y))) are outside the '\(bridge.targetName)' window (\(whole(w))x\(whole(h))). x must be 0-\(whole(w)), y must be 0-\(whole(h))."
-            DebugLog.log(tag, "REJECTED: \(msg)")
-            return msg
-        }
-        return nil
     }
 
     /// Log window info and frontmost app state for any coordinate-based operation.
@@ -411,11 +415,13 @@ final class InputSimulation: Sendable {
         let handback = beginFrontHandback()
         defer { handback.finish(targetPID: targetPID) }
         let prep = preparePointingInput(tag: "drag", x: fromX, y: fromY)
-        guard let info = prep.info else { return prep.error ?? "Unknown error" }
+        guard let prepInfo = prep.info else { return prep.error ?? "Unknown error" }
 
-        if let boundsError = validateBounds(x: toX, y: toY, info: info, tag: "drag") {
-            return boundsError
-        }
+        let bounded = windowContaining(
+            points: [CGPoint(x: fromX, y: fromY), CGPoint(x: toX, y: toY)],
+            info: prepInfo, tag: "drag")
+        guard let info = bounded.info else { return bounded.error ?? "Unknown error" }
+        // Fork: the cover guard also checks where the drag ends.
         let end = CGPoint(x: info.position.x + CGFloat(toX), y: info.position.y + CGFloat(toY))
         if let coverError = coverRefusalIfEnabled(screenPoints: [end], info: info, tag: "drag") {
             return coverError

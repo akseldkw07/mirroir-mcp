@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for StepExecutor: each core step type with stub subsystems.
 // ABOUTME: Validates launch, tap, type, assertions, navigation, dry run, and target switching.
 
@@ -61,6 +73,22 @@ final class StepExecutorTests: XCTestCase {
         XCTAssertEqual(result.message, "App not found")
     }
 
+    /// carnet#27: a launch that leaves Spotlight up opened nothing, and the
+    /// replay says so instead of passing the step.
+    func testALaunchThatLeavesSpotlightOpenFails() {
+        input.launchAppResult = nil
+        bridge.windowInfo = WindowInfo(windowID: 1, position: .zero,
+                                       size: CGSize(width: 430, height: 942), pid: 1)
+        describer.describeResult = ScreenDescriber.DescribeResult(elements: [
+            TapPoint(text: "Meilleur résultat", tapX: 86, tapY: 107, confidence: 0.9),
+            TapPoint(text: "Q Horloge - Ouvrir", tapX: 133, tapY: 874, confidence: 0.9),
+        ], screenshotBase64: "img")
+        let result = executor.execute(
+            step: .launch(appName: "Horloge"), stepIndex: 0, skillName: "test")
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertTrue(result.message?.contains("Spotlight is still open") ?? false, result.message ?? "")
+    }
+
     // MARK: - Tap
 
     func testTapSuccess() {
@@ -110,6 +138,33 @@ final class StepExecutorTests: XCTestCase {
         let result = executor.execute(
             step: .type(text: "Hello"), stepIndex: 0, skillName: "test")
         XCTAssertEqual(result.status, .failed)
+    }
+
+    // MARK: - Clear Field
+
+    func testClearFieldSelectsAllThenDeletes() {
+        let step = SkillParser.parseStep("clear_field")
+        guard case .clearField = step else {
+            return XCTFail("clear_field parsed as \(String(describing: step))")
+        }
+        let result = executor.execute(step: .clearField, stepIndex: 0, skillName: "test")
+        XCTAssertEqual(result.status, .passed)
+        XCTAssertEqual(input.pressKeyCalls, ["command+a", "delete"])
+    }
+
+    func testClearFieldFailsWhenTheKeyIsNotDelivered() {
+        input.pressKeyResult = TypeResult(success: false, error: "key dropped")
+        let result = executor.execute(step: .clearField, stepIndex: 0, skillName: "test")
+        XCTAssertEqual(result.status, .failed)
+        XCTAssertEqual(input.pressKeyCalls, ["command+a"], "nothing deleted after a failed select-all")
+    }
+
+    func testClearFieldRoundTripsThroughItsCompiledTypeKey() {
+        let rebuilt = SkillParser.parseStep(key: SkillStep.clearField.typeKey, rawValue: "")
+        guard case .clearField = rebuilt else {
+            return XCTFail("compiled clear_field rebuilt as \(rebuilt)")
+        }
+        XCTAssertNil(SkillStep.clearField.replayValue)
     }
 
     // MARK: - Press Key
@@ -184,6 +239,20 @@ final class StepExecutorTests: XCTestCase {
         let result = executor.execute(
             step: .home, stepIndex: 0, skillName: "test")
         XCTAssertEqual(result.status, .failed)
+    }
+
+    /// A screen Home leaves unchanged (most likely the Home Screen in a
+    /// language whose search pill is not listed) passes, saying so.
+    func testHomeThatLeavesTheScreenUnchangedPassesWithANote() {
+        bridge.menuActionResult = true
+        describer.describeResult = ScreenDescriber.DescribeResult(
+            elements: [TapPoint(text: "Notizen", tapX: 166, tapY: 499, confidence: 0.9)],
+            screenshotBase64: "img")
+        let result = executor.execute(
+            step: .home, stepIndex: 0, skillName: "test")
+        XCTAssertEqual(result.status, .passed)
+        XCTAssertTrue(result.message?.contains("the screen did not change") ?? false,
+                      result.message ?? "")
     }
 
     // MARK: - Shake
@@ -283,7 +352,7 @@ final class StepExecutorTests: XCTestCase {
             bridge: bridge, input: input,
             capture: capture, describer: describer, recorder: StubRecorder())
         let androidCtx = TargetContext(
-            name: "android", targetType: "generic-window", bundleID: nil,
+            name: "android", targetType: "macos-app", bundleID: nil,
             bridge: bridge2, input: input2,
             capture: capture2, describer: describer2, recorder: StubRecorder())
         let registry = TargetRegistry(

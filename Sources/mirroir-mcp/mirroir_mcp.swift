@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Entry point for the mirroir-mcp server.
 // ABOUTME: Initializes subsystems, then serves JSON-RPC over stdio; `serve` reuses the same startup over HTTP.
 
@@ -15,9 +27,14 @@ struct MirroirMCP {
         // disconnects or its stdio pipe closes unexpectedly.
         signal(SIGPIPE, SIG_IGN)
 
+        // A second process of this binary runs from its own link, so the
+        // two do not take screen capture from each other (carnet#58).
+        ExecutablePathIsolation.isolateIfShared()
+
         // Parse CLI flags. `--debug` is global: the server and every
         // subcommand honor it, so it is removed before a subcommand parses.
-        DebugLog.enabled = CommandLine.arguments.contains(CLIDispatch.debugOption)
+        // MIRROIR_DEBUG turns it on for a host that cannot add arguments.
+        DebugLog.enabled = DebugLog.isRequested(arguments: CommandLine.arguments)
 
         // A subcommand, the usage text or a refusal ends the process here: only
         // a command line that asks for the server goes on to start it.
@@ -58,10 +75,10 @@ struct MirroirMCP {
     /// the requests: the permission policy, the log, the agent runtime, the
     /// targets, the tools, and the release of held input on every way out.
     static func startServer(skipPermissions: Bool, transport: MCPTransport) -> MCPServer {
-        DebugLog.reset()
+        DebugLog.start()
         DebugLog.persist("startup", "version: \(GitVersion.commitHash)")
         if DebugLog.enabled {
-            DebugLog.persist("startup", "Debug logging enabled (--debug)")
+            DebugLog.persist("startup", "Debug logging enabled (--debug or MIRROIR_DEBUG)")
         }
         let config = PermissionPolicy.loadConfig()
         let policy = PermissionPolicy(skipPermissions: skipPermissions, config: config)
@@ -151,8 +168,9 @@ struct MirroirMCP {
 
         for (name, config) in configs {
             guard let ctx = TargetKind.build(config: config, name: name) else {
-                DebugLog.log("TargetRegistry",
-                    "Unknown target type '\(config.type)' for '\(name)' — skipped")
+                let message = TargetKind.unknownTypeMessage(type: config.type, name: name)
+                DebugLog.persist("TargetRegistry", message)
+                fputs("mirroir-mcp: \(message)\n", stderr)
                 continue
             }
             targets[name] = ctx

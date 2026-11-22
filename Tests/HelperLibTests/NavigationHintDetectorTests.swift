@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for NavigationHintDetector back-button detection and hint generation.
 // ABOUTME: Validates detection in nav bar zone, bottom toolbar zone, and absence when no chevron.
 
@@ -180,6 +192,21 @@ struct NavigationHintDetectorTests {
             elements: elements, windowHeight: windowHeight)
         #expect(hints.isEmpty,
             "Multi-word band text is content, not tab-bar evidence")
+    }
+
+    @Test("desktop window's bottom row is not a tab bar")
+    func desktopBottomRowIsNotATabBar() {
+        // Calculator's last row of keys sits where an iOS tab bar would.
+        let elements = [
+            makeTapPoint("0", x: 60, y: 860),
+            makeTapPoint(",", x: 180, y: 860),
+            makeTapPoint("=", x: 240, y: 860),
+        ]
+        let icons = [TapPoint(text: "", tapX: 120, tapY: 860, confidence: 1.0)]
+        let hints = NavigationHintDetector.detect(
+            elements: elements, iconPoints: icons,
+            windowHeight: windowHeight, isMobile: false)
+        #expect(hints.isEmpty, "A tab bar is iOS chrome; a Mac window gets no tab-bar hint")
     }
 
 }

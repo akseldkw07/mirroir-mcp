@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Swipe for InputSimulation: to the target's window when it can be addressed, otherwise through the HID path.
 // ABOUTME: A window-addressed swipe moves neither the pointer nor the front app, even with the mirror fully covered.
 
@@ -18,11 +30,12 @@ extension InputSimulation {
         defer { handback.finish(targetPID: targetPID) }
         let prep = preparePointingInput(tag: "swipe", x: fromX, y: fromY,
                                         byWindow: windowPoster?.canStampEvents == true)
-        guard var info = prep.info else { return prep.error ?? "Unknown error" }
+        guard let prepInfo = prep.info else { return prep.error ?? "Unknown error" }
 
-        if let boundsError = validateBounds(x: toX, y: toY, info: info, tag: "swipe") {
-            return boundsError
-        }
+        let bounded = windowContaining(
+            points: [CGPoint(x: fromX, y: fromY), CGPoint(x: toX, y: toY)],
+            info: prepInfo, tag: "swipe")
+        guard var info = bounded.info else { return bounded.error ?? "Unknown error" }
 
         if let poster = prep.windowPoster {
             return swipeByWindow(poster, in: info, fromX: fromX, fromY: fromY,

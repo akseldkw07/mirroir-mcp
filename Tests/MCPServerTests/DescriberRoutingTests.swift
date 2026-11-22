@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Proves every server-internal screen check reads the local OCR describer, never the client's (vision) one.
 // ABOUTME: Counts describe calls on two stub describers across launch, back, reset, network, scroll, measure, compile, start and explore.
 
@@ -75,7 +87,7 @@ final class DescriberRoutingTests: XCTestCase {
 
         try call(server, "press_back", [:])
 
-        XCTAssertEqual(ocr.describeCallCount, 1)
+        XCTAssertEqual(ocr.describeCallCount, 2, "the screen is read before and after the back tap")
         XCTAssertEqual(client.describeCallCount, 0, "press_back must not use the vision describer")
     }
 
@@ -98,12 +110,13 @@ final class DescriberRoutingTests: XCTestCase {
         let ocr = StubDescriber()
         ocr.describeResult = screen("Wi-Fi")
         let server = server(client: client, ocr: ocr) { server, registry in
-            MirroirMCP.registerNetworkTools(server: server, registry: registry)
+            MirroirMCP.registerNetworkTools(server: server, registry: registry,
+                                           policy: PermissionPolicy(skipPermissions: true, config: nil))
         }
 
         try call(server, "set_network", ["mode": .string("wifi_off")])
 
-        XCTAssertEqual(ocr.describeCallCount, 1)
+        XCTAssertGreaterThan(ocr.describeCallCount, 0, "it reads the screen before and after the switch")
         XCTAssertEqual(client.describeCallCount, 0, "set_network must not use the vision describer")
     }
 

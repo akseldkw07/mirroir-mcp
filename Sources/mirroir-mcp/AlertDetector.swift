@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Detects iOS system alerts (permission prompts, rating dialogs, tracking consent) from OCR elements.
 // ABOUTME: Returns the most conservative dismiss target to safely close unexpected dialogs.
 
@@ -71,7 +83,7 @@ enum AlertDetector {
         let hasTitlePattern = elements.contains { element in
             let lowered = SystemPhrases.fold(element.text)
             return titles.contains { pattern in
-                lowered.contains(pattern) || matchesRegexLike(text: lowered, pattern: pattern)
+                SystemPhrases.matches(lowered, pattern: pattern)
             }
         }
 
@@ -85,15 +97,5 @@ enum AlertDetector {
 
         let alertType = hasTitlePattern ? "permission/tracking dialog" : "system alert"
         return DetectedAlert(dismissTarget: best.element, alertType: alertType)
-    }
-
-    /// Simple pattern matching that handles ".*" wildcard in patterns.
-    private static func matchesRegexLike(text: String, pattern: String) -> Bool {
-        guard pattern.contains(".*") else { return text.contains(pattern) }
-        let parts = pattern.components(separatedBy: ".*")
-        guard parts.count == 2 else { return text.contains(pattern) }
-        guard let firstRange = text.range(of: parts[0]) else { return false }
-        let remaining = text[firstRange.upperBound...]
-        return remaining.contains(parts[1])
     }
 }

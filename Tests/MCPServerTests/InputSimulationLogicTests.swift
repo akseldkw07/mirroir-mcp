@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for InputSimulation pure-logic methods: validateBounds and buildTypeSegments.
 // ABOUTME: These methods are testable without system APIs since they only process coordinates and strings.
 
@@ -19,7 +31,7 @@ final class InputSimulationLogicTests: XCTestCase {
         super.setUp()
         let bridge = MirroringBridge()
         // Pin US QWERTY to test pure segment logic independent of the configured layout
-        simulation = InputSimulation(bridge: bridge, keyboardLayout: .usQWERTY)
+        simulation = InputSimulation(bridge: bridge, keyboardLayouts: .usQWERTY)
     }
 
     // MARK: - validateBounds
@@ -150,7 +162,7 @@ final class InputSimulationLogicTests: XCTestCase {
     private func makeCanadianCSASimulation() throws -> InputSimulation {
         let layout = try XCTUnwrap(IPhoneKeyboardLayout.named("Canadian-CSA"),
                                    "Canadian-CSA layout not available on this system")
-        return InputSimulation(bridge: MirroringBridge(), keyboardLayout: layout)
+        return InputSimulation(bridge: MirroringBridge(), keyboardLayouts: KeyboardLayoutSet(single: layout, name: "Canadian-CSA"))
     }
 
     func testCanadianCSAURLIsTypedEntirelyByKey() throws {

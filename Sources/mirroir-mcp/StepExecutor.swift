@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Executes individual skill steps against real subsystems via protocol abstractions.
 // ABOUTME: Maps each SkillStep to the appropriate subsystem call (OCR, input, capture).
 
@@ -165,6 +177,8 @@ final class StepExecutor {
             result = executeTap(label: label, startTime: startTime)
         case .type(let text):
             result = executeType(text: text, startTime: startTime)
+        case .clearField:
+            result = executeClearField(startTime: startTime)
         case .pressKey(let keyName, let modifiers):
             result = executePressKey(keyName: keyName, modifiers: modifiers,
                                      startTime: startTime)
@@ -242,7 +256,17 @@ final class StepExecutor {
             return StepResult(step: step, status: .failed, message: error,
                               durationSeconds: elapsed(startTime))
         }
-        return StepResult(step: step, status: .passed, message: nil,
+        // Confirmed the way the launch_app tool confirms it: a launch that
+        // left Spotlight or the Home Screen up opened nothing (carnet#27).
+        let outcome = LaunchAppConfirmation.outcome(
+            appName: appName, describer: describer,
+            windowHeight: bridge.getWindowInfo().map { Double($0.size.height) })
+        let report = outcome.content.compactMap { content -> String? in
+            if case .text(let text) = content { return text }
+            return nil
+        }.joined(separator: " ")
+        return StepResult(step: step, status: outcome.isError ? .failed : .passed,
+                          message: outcome.isError ? report : nil,
                           durationSeconds: elapsed(startTime))
     }
 
@@ -277,7 +301,12 @@ final class StepExecutor {
                               durationSeconds: elapsed(startTime))
         }
 
-        if let error = input.tap(x: match.element.tapX, y: match.element.tapY) {
+        // On the Home Screen a label opens nothing: the tap goes to its icon.
+        let height = Double(bridge.getWindowInfo()?.size.height ?? 0)
+        let point = SpotlightDetector.isHomeScreenVisible(elements: describeResult.elements, windowHeight: height)
+            ? HomeScreenAppIcon.tapPoint(for: match.element, in: describeResult.elements)
+            : (match.element.tapX, match.element.tapY)
+        if let error = input.tap(x: point.0, y: point.1) {
             return StepResult(step: step, status: .failed, message: error,
                               durationSeconds: elapsed(startTime))
         }
@@ -339,78 +368,6 @@ final class StepExecutor {
                           durationSeconds: elapsed(startTime))
     }
 
-    private func executeWaitFor(label: String, timeoutSeconds: Int,
-                                startTime: CFAbsoluteTime) -> StepResult {
-        let step = SkillStep.waitFor(label: label, timeoutSeconds: timeoutSeconds)
-        let deadline = CFAbsoluteTimeGetCurrent() + Double(timeoutSeconds)
-
-        // Exponential backoff: start at 200ms, double each iteration, cap at 2s
-        let initialPollUs: useconds_t = 200_000
-        let maxPollUs: useconds_t = 2_000_000
-        var currentPollUs = initialPollUs
-
-        while CFAbsoluteTimeGetCurrent() < deadline {
-            if let describeResult = describer.describe(),
-               ElementMatcher.isVisible(label: label, in: describeResult.elements) {
-                return StepResult(step: step, status: .passed, message: nil,
-                                  durationSeconds: elapsed(startTime))
-            }
-            usleep(currentPollUs)
-            currentPollUs = min(currentPollUs * 2, maxPollUs)
-        }
-
-        // Final check after deadline
-        if let describeResult = describer.describe(),
-           ElementMatcher.isVisible(label: label, in: describeResult.elements) {
-            return StepResult(step: step, status: .passed, message: nil,
-                              durationSeconds: elapsed(startTime))
-        }
-
-        return StepResult(step: step, status: .failed,
-                          message: "Timed out waiting for \"\(label)\" after \(timeoutSeconds)s",
-                          durationSeconds: elapsed(startTime))
-    }
-
-    private func executeAssertVisible(label: String, startTime: CFAbsoluteTime) -> StepResult {
-        let step = SkillStep.assertVisible(label: label)
-
-        guard let describeResult = describer.describe() else {
-            return StepResult(step: step, status: .failed,
-                              message: captureFailureMessage(),
-                              durationSeconds: elapsed(startTime))
-        }
-
-        if ElementMatcher.isVisible(label: label, in: describeResult.elements) {
-            return StepResult(step: step, status: .passed, message: nil,
-                              durationSeconds: elapsed(startTime))
-        }
-
-        let available = describeResult.elements.map { $0.text }.joined(separator: ", ")
-        return StepResult(step: step, status: .failed,
-                          message: "Expected \"\(label)\" to be visible. Found: [\(available)]",
-                          durationSeconds: elapsed(startTime))
-    }
-
-    private func executeAssertNotVisible(label: String, startTime: CFAbsoluteTime) -> StepResult {
-        let step = SkillStep.assertNotVisible(label: label)
-
-        guard let describeResult = describer.describe() else {
-            // If we can't describe the screen, we can't confirm visibility either way
-            return StepResult(step: step, status: .failed,
-                              message: captureFailureMessage(),
-                              durationSeconds: elapsed(startTime))
-        }
-
-        if !ElementMatcher.isVisible(label: label, in: describeResult.elements) {
-            return StepResult(step: step, status: .passed, message: nil,
-                              durationSeconds: elapsed(startTime))
-        }
-
-        return StepResult(step: step, status: .failed,
-                          message: "Expected \"\(label)\" to NOT be visible, but it was found",
-                          durationSeconds: elapsed(startTime))
-    }
-
     private func executeScreenshot(label: String, skillName: String,
                                    startTime: CFAbsoluteTime) -> StepResult {
         let step = SkillStep.screenshot(label: label)
@@ -438,19 +395,24 @@ final class StepExecutor {
 
     private func executeHome(startTime: CFAbsoluteTime) -> StepResult {
         let step = SkillStep.home
-        guard let menuBridge = bridge as? (any MenuActionCapable) else {
-            return StepResult(step: step, status: .failed,
-                              message: "Target '\(bridge.targetName)' does not support the home button",
+        let outcome = MirroringMenuCommand.pressHome(bridge: bridge, input: input, describer: describer)
+        switch outcome {
+        case .reached:
+            return StepResult(step: step, status: .passed, message: nil,
+                              durationSeconds: elapsed(startTime))
+        case .unchanged:
+            return StepResult(step: step, status: .passed, message: outcome.report,
+                              durationSeconds: elapsed(startTime))
+        case .failed(let error):
+            return StepResult(step: step, status: .failed, message: error,
                               durationSeconds: elapsed(startTime))
         }
-        let success = menuBridge.triggerMenuAction(menu: "View", item: "Home Screen")
-        if !success {
-            return StepResult(step: step, status: .failed,
-                              message: "Failed to trigger Home Screen menu action",
-                              durationSeconds: elapsed(startTime))
-        }
-        return StepResult(step: step, status: .passed, message: nil,
-                          durationSeconds: elapsed(startTime))
+    }
+
+    private func executeClearField(startTime: CFAbsoluteTime) -> StepResult {
+        let result = FieldClearing.clear(using: input)
+        return StepResult(step: .clearField, status: result.success ? .passed : .failed,
+                          message: result.error, durationSeconds: elapsed(startTime))
     }
 
     private func executeOpenURL(url: String, startTime: CFAbsoluteTime) -> StepResult {

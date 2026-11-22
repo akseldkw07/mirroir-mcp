@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests that a swipe or drag returns the front app and pointer it borrowed, and only what it borrowed.
 // ABOUTME: The Mac is a scripted double: no real window comes forward and the real pointer does not move.
 
@@ -67,14 +79,14 @@ final class FrontHandbackTests: XCTestCase {
     /// A desktop target is meant to be in front, so it borrows nothing.
     func testATargetWithNoWindowPosterKeepsTheFront() {
         let mac = ScriptedMac(owners: [iTerm, mirror])
-        let input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY, macFront: mac.front)
+        let input = InputSimulation(bridge: StubBridge(), keyboardLayouts: .usQWERTY, macFront: mac.front)
         input.beginFrontHandback().finish(targetPID: mirror)
         XCTAssertTrue(mac.broughtForward.isEmpty)
     }
 
     func testAMirrorTargetRemembersTheFront() {
         let mac = ScriptedMac(owners: [])
-        let input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY,
+        let input = InputSimulation(bridge: StubBridge(), keyboardLayouts: .usQWERTY,
                                     windowPoster: RecordingWindowPoster(), macFront: mac.front)
         mac.owners = [iTerm, input.targetPID]
         let handback = input.beginFrontHandback()
@@ -90,7 +102,7 @@ final class FrontHandbackTests: XCTestCase {
         let mac = ScriptedMac(owners: [])
         let poster = RecordingWindowPoster()
         let keys = RecordingKeyPoster()
-        let input = InputSimulation(bridge: StubBridge(), keyboardLayout: .usQWERTY, keyPoster: keys,
+        let input = InputSimulation(bridge: StubBridge(), keyboardLayouts: .usQWERTY, keyPoster: keys,
                                     windowPoster: poster, macFront: mac.front)
         mac.owners = [iTerm, input.targetPID, iTerm, input.targetPID]
 

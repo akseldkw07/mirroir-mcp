@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Stub implementations of protocol abstractions for test runner unit tests.
 // ABOUTME: Each stub returns configurable values, enabling tests without real macOS system APIs.
 
@@ -96,7 +108,16 @@ final class StubInput: InputProviding, @unchecked Sendable {
         return shakeResult
     }
     func typeText(_ text: String) -> TypeResult { typeTextResult }
-    func pressKey(keyName: String, modifiers: [String]) -> TypeResult { pressKeyResult }
+    func rememberKeyboardLayout(_ name: String) -> String? { nil }
+    /// Every pressKey() call as "<modifiers+>key", in order.
+    var pressKeyCalls: [String] = []
+    func pressKey(keyName: String, modifiers: [String]) -> TypeResult {
+        pressKeyCalls.append((modifiers + [keyName]).joined(separator: "+"))
+        return pressKeyResult
+    }
+    /// What `ensureConnected` answers: nil for a connected target, else the refusal.
+    var ensureConnectedResult: String?
+    func ensureConnected(tag: String) -> String? { ensureConnectedResult }
     func launchApp(name: String) -> String? {
         launchAppCalls.append(name)
         return launchAppResult
@@ -166,13 +187,13 @@ final class StubDescriber: ScreenDescribing, @unchecked Sendable {
 
 final class StubRecorder: ScreenRecording, @unchecked Sendable {
     var startResult: String?
-    var stopResult: (filePath: String?, error: String?) = ("/tmp/test.mov", nil)
+    var stopResult = RecordingStop(filePath: "/tmp/test.mov", error: nil)
 
     func startRecording(outputPath: String?) -> String? {
         startResult
     }
 
-    func stopRecording() -> (filePath: String?, error: String?) {
+    func stopRecording() -> RecordingStop {
         stopResult
     }
 }

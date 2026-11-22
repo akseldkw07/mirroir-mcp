@@ -1,9 +1,22 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Registers the touch MCP tool: one persistent touch contact held across calls.
 // ABOUTME: Parses begin/move/end/cancel arguments and delegates to InputProviding.touch.
 
+import CoreGraphics
 import Foundation
 import HelperLib
 
@@ -14,7 +27,8 @@ extension MirroirMCP {
 
     static func registerTouchTools(
         server: MCPServer,
-        registry: TargetRegistry
+        registry: TargetRegistry,
+        policy: PermissionPolicy
     ) {
         server.registerTool(MCPToolDefinition(
             name: "touch",
@@ -68,6 +82,11 @@ extension MirroirMCP {
                 case .failure(let parseError): return .error(parseError.message)
                 }
 
+                // A begin and an end on an icon open its app, as a tap does.
+                if case .begin(let x, let y) = command,
+                   let refusal = BlockedAppTapGuard.refusal(at: CGPoint(x: x, y: y), ctx: ctx, policy: policy) {
+                    return .error(refusal)
+                }
                 switch ctx.input.touch(command) {
                 case .success(let outcome): return .text(touchOutcomeText(outcome))
                 case .failure(let touchError): return .error(touchError.description)

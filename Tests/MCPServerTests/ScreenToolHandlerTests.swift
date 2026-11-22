@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for screen tool MCP handlers: screenshot, describe_screen, start/stop recording.
 // ABOUTME: Verifies app-not-running checks, capture failure paths, and success responses.
 
@@ -274,21 +286,30 @@ final class ScreenToolHandlerTests: XCTestCase {
     // MARK: - stop_recording
 
     func testStopRecordingSuccess() {
-        recorder.stopResult = ("/tmp/recording.mov", nil)
+        recorder.stopResult = RecordingStop(filePath: "/tmp/recording.mov", error: nil)
         let response = callTool("stop_recording")
         XCTAssertFalse(isError(response))
         XCTAssertEqual(extractText(response), "Recording saved to: /tmp/recording.mov")
     }
 
     func testStopRecordingError() {
-        recorder.stopResult = (nil, "No recording in progress")
+        recorder.stopResult = RecordingStop(filePath: nil, error: "No recording in progress")
         let response = callTool("stop_recording")
         XCTAssertTrue(isError(response))
         XCTAssertEqual(extractText(response), "No recording in progress")
     }
 
+    func testStopRecordingSaysARecordingEndedOnItsOwn() {
+        recorder.stopResult = RecordingStop(filePath: "/tmp/r.mov", error: nil,
+                                            endedEarly: "the recording had already ended on its own")
+        let response = callTool("stop_recording")
+        XCTAssertFalse(isError(response))
+        XCTAssertEqual(extractText(response), "Recording saved to: /tmp/r.mov. Note: the recording had "
+                       + "already ended on its own, so the video stops there.")
+    }
+
     func testStopRecordingNoFile() {
-        recorder.stopResult = (nil, nil)
+        recorder.stopResult = RecordingStop(filePath: nil, error: nil)
         let response = callTool("stop_recording")
         XCTAssertTrue(isError(response))
         let text = extractText(response)

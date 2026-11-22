@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests for ElementMatcher: exact, case-insensitive, and substring matching.
 // ABOUTME: Covers match priorities, empty input, no-match cases, and visibility checks.
 
@@ -142,6 +154,29 @@ final class ElementMatcherTests: XCTestCase {
         let result = ElementMatcher.findMatch(label: "Reglages", in: elements)
         XCTAssertNotNil(result)
         XCTAssertEqual(result?.strategy, .diacriticInsensitive)
+    }
+
+    /// carnet#72: scroll_to "Épicerie" in Rappels missed a row on screen.
+    /// describe_screen's query ignores case and accents on a line holding more
+    /// than the label; the substring tiers ignored case only.
+    func testASubstringMatchIgnoresAccents() {
+        let elements = [makeTapPoint(text: "Mes listes"), makeTapPoint(text: "Epicerie 3")]
+        let result = ElementMatcher.findMatch(label: "Épicerie", in: elements)
+        XCTAssertEqual(result?.element.text, "Epicerie 3")
+        XCTAssertEqual(result?.strategy, .substring)
+        XCTAssertTrue(ElementMatcher.isVisible(label: "épicerie", in: [makeTapPoint(text: "• ÉPICERIE")]))
+    }
+
+    func testAnAccentFoldedReverseSubstringNeedsHalfTheLabel() {
+        let result = ElementMatcher.findMatch(label: "Épicerie fine", in: [makeTapPoint(text: "Epicerie")])
+        XCTAssertEqual(result?.element.text, "Epicerie")
+        XCTAssertNil(ElementMatcher.findMatch(label: "Épicerie fine", in: [makeTapPoint(text: "Ep")]))
+    }
+
+    func testAnAccentFoldedSubstringRanksBelowEveryOtherTier() {
+        let elements = [makeTapPoint(text: "Epicerie 3"), makeTapPoint(text: "Épicerie du coin")]
+        let result = ElementMatcher.findMatch(label: "Épicerie", in: elements)
+        XCTAssertEqual(result?.element.text, "Épicerie du coin", "the plain substring tier wins")
     }
 
     // MARK: - No Match

@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Shared test doubles for DFSExplorer tests: mock describer, mock input, and element factory.
 // ABOUTME: These are used across multiple DFSExplorer test files.
 
@@ -102,6 +114,7 @@ final class MockExplorerInput: InputProviding, @unchecked Sendable {
     func doubleTap(x: Double, y: Double, cursorMode: CursorMode?) -> String? { nil }
     func shake() -> TypeResult { TypeResult(success: true, error: nil) }
     func typeText(_ text: String) -> TypeResult { TypeResult(success: true, error: nil) }
+    func rememberKeyboardLayout(_ name: String) -> String? { nil }
 
     func pressKey(keyName: String, modifiers: [String]) -> TypeResult {
         lock.lock()
@@ -117,6 +130,7 @@ final class MockExplorerInput: InputProviding, @unchecked Sendable {
         return nil
     }
     func openURL(_ url: String) -> String? { nil }
+    func ensureConnected(tag: String) -> String? { nil }
     func touch(_ command: TouchCommand) -> Result<TouchOutcome, TouchSessionError> {
         .failure(.rejected("MockExplorerInput does not hold touches"))
     }

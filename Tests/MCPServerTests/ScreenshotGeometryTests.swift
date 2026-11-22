@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Tests the geometry reported with a screenshot and the conversion of an image point to a window point.
 // ABOUTME: Also covers the screenshot tool's reply and the tap tool's image_size and image_region arguments.
 
@@ -150,7 +162,7 @@ final class ScreenshotPointToolTests: XCTestCase {
         capture = StubCapture()
         let registry = makeTestRegistry(bridge: bridge, input: input, capture: capture)
         MirroirMCP.registerScreenTools(server: server, registry: registry)
-        MirroirMCP.registerTapTools(server: server, registry: registry)
+        MirroirMCP.registerTapTools(server: server, registry: registry, policy: PermissionPolicy(skipPermissions: true, config: nil))
     }
 
     private func call(_ name: String, _ args: [String: JSONValue]) -> (content: [[String: JSONValue]], isError: Bool) {

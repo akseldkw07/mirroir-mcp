@@ -1,8 +1,20 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Registers the set_network MCP tool for toggling network settings on iPhone.
-// ABOUTME: Navigates to iOS Settings to toggle Airplane, Wi-Fi, or Cellular modes.
+// ABOUTME: Parses the mode and delegates the Settings procedure to NetworkToggle.
 
 import Foundation
 import HelperLib
@@ -10,27 +22,29 @@ import HelperLib
 extension MirroirMCP {
     static func registerNetworkTools(
         server: MCPServer,
-        registry: TargetRegistry
+        registry: TargetRegistry,
+        policy: PermissionPolicy
     ) {
         // set_network — toggle network settings via the Settings app
         server.registerTool(MCPToolDefinition(
             name: "set_network",
             description: """
-                Toggle network settings on the mirrored iPhone by navigating to the \
-                Settings app and tapping the appropriate control. Supported modes: \
-                airplane_on, airplane_off, wifi_on, wifi_off, cellular_on, cellular_off. \
-                After toggling, returns to the home screen.
+                Set Airplane Mode, Wi-Fi or cellular data on the mirrored iPhone in \
+                the Settings app. The switch is read first and tapped only when it \
+                is not already in the asked state, then read again; the result says \
+                what it shows. A switch that cannot be read (a menu, as cellular \
+                data is with two SIMs, or the dark appearance) is refused without a \
+                tap. airplane_on and wifi_off can cut iPhone Mirroring's connection, \
+                and only the iPhone can then turn them back. Modes: airplane_on, \
+                airplane_off, wifi_on, wifi_off, cellular_on, cellular_off. Returns to \
+                the home screen afterwards.
                 """,
             inputSchema: [
                 "type": .string("object"),
                 "properties": .object([
                     "mode": .object([
                         "type": .string("string"),
-                        "enum": .array([
-                            .string("airplane_on"), .string("airplane_off"),
-                            .string("wifi_on"), .string("wifi_off"),
-                            .string("cellular_on"), .string("cellular_off"),
-                        ]),
+                        "enum": .array(NetworkToggle.Mode.names.map { .string($0) }),
                         "description": .string(
                             "Network mode to set: airplane_on/off, wifi_on/off, cellular_on/off"),
                     ])
@@ -43,61 +57,20 @@ extension MirroirMCP {
                 guard let menuBridge = ctx.bridge as? (any MenuActionCapable) else {
                     return .error("Target '\(ctx.name)' does not support set_network")
                 }
-                let input = ctx.input
-                let describer = ctx.ocrDescriber
-
                 guard let mode = args["mode"]?.asString() else {
                     return .error("Missing required parameter: mode (string)")
                 }
-
-                let validModes = ["airplane_on", "airplane_off", "wifi_on", "wifi_off",
-                                  "cellular_on", "cellular_off"]
-                guard validModes.contains(mode) else {
-                    return .error(
-                        "Unknown mode: \(mode). Use: \(validModes.joined(separator: ", "))")
+                if case .denied(let reason) = policy.checkAppLaunch(NetworkToggle.settingsAppName) {
+                    return .error(reason)
                 }
 
-                // Launch Settings
-                if let error = input.launchApp(name: "Settings") {
-                    return .error("Failed to launch Settings: \(error)")
+                switch NetworkToggle.toggle(
+                    mode: mode, input: ctx.input, describer: ctx.ocrDescriber,
+                    menuBridge: menuBridge, settleUs: EnvConfig.toolSettlingDelayUs
+                ) {
+                case .success(let message): return .text(message)
+                case .failure(let error): return .error(error.message)
                 }
-                usleep(EnvConfig.settingsLoadUs)  // Wait for Settings to load
-
-                let targetLabel: String
-                switch mode {
-                case "airplane_on", "airplane_off":
-                    targetLabel = "Airplane"
-                case "wifi_on", "wifi_off":
-                    targetLabel = "Wi-Fi"
-                case "cellular_on", "cellular_off":
-                    targetLabel = "Cellular"
-                default:
-                    targetLabel = ""
-                }
-
-                // Find and tap the setting row
-                guard let describeResult = describer.describe() else {
-                    _ = menuBridge.triggerMenuAction(menu: "View", item: "Home Screen")
-                    return .error("Failed to capture Settings screen")
-                }
-
-                guard let match = ElementMatcher.findMatch(label: targetLabel,
-                                                             in: describeResult.elements) else {
-                    _ = menuBridge.triggerMenuAction(menu: "View", item: "Home Screen")
-                    return .error("'\(targetLabel)' not found in Settings")
-                }
-
-                if let error = input.tap(x: match.element.tapX, y: match.element.tapY) {
-                    _ = menuBridge.triggerMenuAction(menu: "View", item: "Home Screen")
-                    return .error("Failed to tap \(targetLabel): \(error)")
-                }
-
-                usleep(EnvConfig.toolSettlingDelayUs)
-
-                // Return to home screen
-                _ = menuBridge.triggerMenuAction(menu: "View", item: "Home Screen")
-
-                return .text("Toggled \(mode)")
             }
         ))
     }

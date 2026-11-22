@@ -1,6 +1,18 @@
-// Copyright 2026 jfarcand@apache.org
-// Licensed under the Apache License, Version 2.0
-//
+/*
+ * Copyright 2026 Async-IO.org
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not
+ * use this file except in compliance with the License. You may obtain a copy of
+ * the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations under
+ * the License.
+ */
 // ABOUTME: Reads macOS keyboard layouts with UCKeyTranslate to find which physical key types each character.
 // ABOUTME: Builds the per-layout key table that types text on an iPhone whose hardware keyboard is not US QWERTY.
 
@@ -69,17 +81,10 @@ public enum LayoutMapper {
         layout.isEmpty || sourceID(forLayout: layout) == usSourceID
     }
 
-    /// Find the iPhone's keyboard layout when it is not US QWERTY.
-    ///
-    /// Reads the layout name from `EnvConfig.keyboardLayout` which resolves
-    /// from settings.json (set by `mirroir-mcp configure`) or the
-    /// `IPHONE_KEYBOARD_LAYOUT` environment variable.
-    ///
-    /// Pass an explicit `layout` to override config lookup (used by tests).
-    /// Returns nil when the layout is empty or US QWERTY, or when macOS has no
-    /// layout by that name.
-    public static func findNonUSLayout(layout override: String? = nil) -> (sourceID: String, layoutData: Data)? {
-        let layout = override ?? EnvConfig.keyboardLayout
+    /// The source ID and key-layout data of `layout` when it is not US
+    /// QWERTY. Nil when the layout is empty or US QWERTY, or when macOS has
+    /// no layout by that name.
+    public static func findNonUSLayout(layout: String) -> (sourceID: String, layoutData: Data)? {
         guard !isUSLayout(layout) else { return nil }
         let fullID = sourceID(forLayout: layout)
         return layoutData(forSourceID: fullID).map { (fullID, $0) }

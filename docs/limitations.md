@@ -14,6 +14,8 @@ On iPhone Mirroring, swipes do not take the front: the app you are using keeps k
 
 On macOS 26.5, taps and keystrokes also went to the window without activating it. On macOS 27 (measured 2026-11-08) window click records, stamped click events and process-addressed keystrokes all left the iPhone untouched, with the mirror in front or not, while HID clicks and keys landed; swipes still land as window events. With Spotify in front and the front app sampled every second, `launch_app` held iPhone Mirroring in front for about a second while typing, then returned Spotify; swipes never moved it.
 
+In this fork taps and keystrokes are therefore always HID input, and only swipes use the window path. The `windowInput` setting (`auto`, `on`, `off`) chooses the swipe path: `auto` uses the window on the macOS versions it was measured on (through macOS 27 here) and HID swipes on a later one, and `mirroir-mcp doctor` says which is in use. Upstream measured macOS 27.3 accepting and dropping every window event, swipes included ([#84](https://github.com/jfarcand/mirroir-mcp/issues/84)); if swipes stop reaching the iPhone after a macOS update, set `windowInput` to `off`.
+
 ### Why Gestures Still Take the Front
 
 On macOS 26.5, a drag sent as window events or window records loses its intermediate points (iOS sees a press and a release, so a drag reads as a tap). Drags and multi-step gestures therefore stay on HID input, which needs iPhone Mirroring in front. Swipes do not: measured on macOS 26.5 with iTerm in front and Finder covering the mirror, window-addressed scroll events moved App Store lists and paged Weather with the front app unchanged in every sample. A swipe that scrolls nothing with the cursor path, such as pulling the Photos grid to older photos, scrolls nothing here either. Generic macOS windows keep their activating behavior.
@@ -45,7 +47,9 @@ Measured on macOS 26.5 with an iPhone XR:
 | Mac screen locked | Nothing can be read or sent. `status` and every input say the Mac's screen is locked and ask for it to be unlocked. After unlocking, the window may show "Mac Locked" with a Connect button to press once. |
 | Window minimized (Cmd+M) | The window is no longer the app's main window, so nothing can be read from it or sent to it. `status` says `Window minimized`, and every read and input says the window is minimized and that the user must bring it back from the Dock. |
 
-No tool brings a minimized or hidden window back: on this macOS version that takes activating the app, which mirroir does not do for you. Stage Manager has not been measured.
+No tool brings a minimized or hidden window back: on this macOS version that takes activating the app, which mirroir does not do for you.
+
+With Stage Manager on, a window in the strip (or shown in Mission Control) is reported by the window server at its thumbnail size. Measured on macOS 26.5: 47x141 for a 430x942 window. mirroir reports the window's own frame instead, which is where the window shows once it is on stage.
 
 ### Alternatives That Don't Work
 
@@ -62,6 +66,12 @@ From a non-US layout, mirroir takes single keystrokes (unshifted or shifted) and
 
 The setting must match the layout chosen on the iPhone. A mismatch types the wrong character rather than skipping it — with no layout set on a Canadian-CSA iPhone, `/` arrives as `é` and every URL is garbled.
 
+### iPhones with different keyboards on one Mac
+
+Nothing iPhone Mirroring exposes names the connected phone: the paired-device ID and the window ID stay the same when you switch phones. When the phones that take turns on a Mac use different hardware keyboards, list every layout (`"keyboardLayout": ["Canadian-CSA", "US"]`). A character every listed layout types with the same keys (letters, digits, most punctuation) is typed by key. Text holding a character they type with different keys (`'`, `/`, `?`, `é` between Canadian-CSA and US) is pasted through the clipboard in one run until the connected phone's layout is known, and `type_text` says so. A list needs mirroir 0.50.2 or later: older versions read a list as US.
+
+Pass `keyboard_layout` to `type_text` with the phone's layout (Settings › General › Keyboard › Hardware Keyboard on the iPhone) and those characters are typed by key. The answer is saved in `~/.mirroir-mcp/keyboard-layouts.json` under the mirroring window's size, so each phone model keeps its own answer and a switch does not ask again. The size only decides whether an answer applies: a size with no answer pastes again, and when the screen shows what another listed layout types instead (`J<arrive` for `J'arrive`), the call fails and the answer is forgotten. Two phones of the same model with different keyboards trigger that check, so they cost a question rather than a wrong character kept.
+
 ### Clipboard paste is confirmed by OCR
 
 `type_text` types every character it has a key for and pastes only the runs it has none for (emoji, CJK, symbols the layout lacks), one `Cmd+V` per run. `Cmd+V` pastes the *iPhone's* clipboard; the Mac pasteboard reaches it only through Universal Clipboard (Handoff on both ends, Bluetooth and Wi-Fi, same iCloud account), asynchronously. With Handoff off nothing arrives; with a lagging sync the device pastes its previous clipboard value.
@@ -69,7 +79,7 @@ The setting must match the layout chosen on the iPhone. A mismatch types the wro
 So each paste is read back from the screen with local OCR before the next clipboard write: the last `pasteVerifyWindowChars` readable characters of the line — the pasted run plus the text typed just before it — must appear one more time than before the paste, within `pasteVerifyTimeoutUs`. A paste not seen stops the call with an error that names what was confirmed and what was not; the MCP tool returns `isError`, and a skill step fails. What this means in practice:
 
 - **Emoji and pictographic symbols are never confirmed.** OCR has no glyph to read for them, so a run made only of them is still pasted but the call returns an error saying it is unverified. Check the screen yourself before relying on it.
-- **Non-Latin scripts need `ocrLanguages`.** With the default `["en-US"]`, Vision does not read CJK, so a CJK paste that landed is reported as not seen. Add the script (e.g. `["ja-JP","en-US"]`).
+- **Non-Latin scripts need their language requested.** OCR reads your Mac's preferred languages plus English. When the phone shows a script the Mac's languages do not cover, Vision does not read it, so a CJK paste that landed is reported as not seen. Set `ocrLanguages` (e.g. `["ja-JP","en-US"]`).
 - **Secure fields hide what was pasted.** A password field shows dots, so a paste into one cannot be confirmed; keyed characters are unaffected.
 - **The confirmed text must sit on one visible line.** A field that wraps the pasted tail across lines, or scrolls it out of view, fails the check.
 - **A mixed run is judged as a whole.** A pasted run holding both readable characters and emoji is reported unverified: a stale clipboard holding only the readable part would otherwise pass.
@@ -82,10 +92,11 @@ After an app is launched from Spotlight, iOS can reopen Spotlight still showing 
 
 - It waits for Spotlight to appear, and opens it once more if a Home transition closed it.
 - When Spotlight holds a query and shows the app as a tile (its name with an app icon above it), it taps that tile instead of typing, then confirms Spotlight closed.
-- Otherwise it types the name. If the name never appears, it looks for the app's tile once more before failing without pressing Return.
-- It presses Return only when Spotlight's top result is an app: the "Top Hit" heading shows and either the search field reads "*name* — Open" or the result is a tile. An app that is not installed has no top hit, only web suggestions and App Store rows, so the call fails and says so instead of opening one of them.
+- Otherwise it types the name. If the name never appears, it looks for the app's tile once more, then goes to the Home Screen route below, without pressing Return.
+- It opens the top result only when that result is an app: the "Top Hit" heading shows and either the search field reads "*name* — Open" or the result is a tile. It taps the tile when it reads one, and presses Return only when it does not. An app that is not installed has no top hit, only web suggestions and App Store rows, so the call fails and says so instead of opening one of them.
+- When Spotlight never shows the typed name (on iOS 26, Spotlight in an iPhone Mirroring session can take typing only once, while apps still take it), it presses View > Home Screen, which closes Spotlight, and taps the Home Screen icon labeled exactly with the name on the page Home shows. It never turns a page: a touch drag across the icon grid can pick up an icon and rearrange the Home Screen. Apps on another page, in a folder, in the Dock or only in the App Library are not searched; the call then fails, says so, and leaves the phone on the Home Screen.
 
-A held query for a *different* app still fails the launch. Recover by quitting and relaunching iPhone Mirroring.
+A held query for a *different* app takes the same Home Screen route.
 
 ## Web and iOS Scenarios
 
