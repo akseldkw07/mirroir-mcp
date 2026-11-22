@@ -51,10 +51,18 @@ keyboard path are fine; `launch_app`'s own steps are what fail.
 | --- | --- | --- | --- | --- |
 | 2026-11-15 | `69ea6e5` (0.48.0) | 5 of 5 | 5 of 5 | 5 of 5 |
 | 2026-11-18 | `0228f23` plus the `EnvConfigAppIdentity` split (0.48.0 and the input fixes) | 4 of 5 | 6 of 6 | 5 of 5 |
+| 2026-11-22 | `295ddbf` (0.50.3), mirror window 249x552 pt | 0 of 3 | 3 of 3 | 2 of 2 |
 
 The one failure (TikTok, fourth launch in a row, 2026-11-18): "Spotlight did not show
 'TikTok' after it was typed ... Opening it from its Home Screen icon failed too: the Home
 Screen did not show (its search pill was not found)." The next launch worked. The Mac was in
 use by hand at the time, which may have taken the keys.
 
-Still open: steps 1 to 3, and that one failure if it comes back.
+TikTok on 2026-11-22: Spotlight showed "TikTak - Abrir" in the field and "Tik Tak" as the top
+hit's label, so the top-hit check refused it ("Spotlight lists no app as its top result"). The
+0.48.0 server gave the same error the same day, so this is the OCR misread from the table at
+the top (step 3), not a change in 0.50.3. The mirror window was smaller than on the earlier
+dates (249x552 against 259x573 pt), which may be why the misread now happens every time.
+Contactos, Calendario and a Home Screen tap on "zoom" opened the first time.
+
+Still open: steps 1 to 3. Step 3 now blocks TikTok at this window size.
