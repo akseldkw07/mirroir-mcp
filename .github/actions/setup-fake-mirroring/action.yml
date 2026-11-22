@@ -55,6 +55,18 @@ runs:
         echo "--- displays after ---"
         displayplacer list 2>/dev/null | grep -E "Resolution" || true
 
+    - name: Mute the runner's speakers
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The listen tests make FakeMirroring speak aloud. On the self-hosted
+        # VM runner the guest's sound plays through the host Mac's speakers,
+        # so mute the output. ScreenCaptureKit records the app's own audio,
+        # not the speakers, so the listen tests still hear the speech.
+        # `|| true`: a runner with no output device has nothing to mute.
+        osascript -e 'set volume output muted true' 2>/dev/null || true
+        echo "output muted: $(osascript -e 'output muted of (get volume settings)' 2>/dev/null || echo 'no output device')"
+
     - name: Launch FakeMirroring
       shell: bash
       run: |
