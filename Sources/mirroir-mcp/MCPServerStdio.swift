@@ -49,8 +49,8 @@ extension MCPServer {
         case .ignored:
             return
         case .malformed(let code, let message):
-            // Queued like a request, so the error leaves after the answers to
-            // the lines that arrived before it.
+            // Answered in turn, so the error does not overtake the replies to
+            // requests that arrived before the line.
             loop.submit { [self] in
                 write(JSONRPCResponse(id: nil, result: nil, error: JSONRPCError(code: code, message: message)),
                       to: session)
