@@ -198,6 +198,31 @@ final class MCPServerStdioTests: XCTestCase {
         XCTAssertNotNil(connection.waitFor { self.id($0) == 1 }, "requests already received still run")
     }
 
+    func testAParseErrorIsAnsweredAfterTheRequestsReceivedBeforeIt() {
+        let server = makeServer()
+        server.registerTool(MCPToolDefinition(
+            name: "pause", description: "Returns after a short wait.", inputSchema: [:],
+            contextualHandler: { _, _ in
+                Thread.sleep(forTimeInterval: 0.2)
+                return .text("done")
+            }))
+        let connection = Connection(server: server)
+
+        connection.send(#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"pause","arguments":{}}}"#)
+        connection.send("this is not json")
+
+        XCTAssertNotNil(connection.waitFor { self.id($0) == 7 })
+        XCTAssertNotNil(connection.waitFor { ($0["error"] as? [String: Any])?["code"] as? Int == -32700 })
+        let lines = connection.received
+        let response = lines.firstIndex { self.id($0) == 7 }
+        let parseError = lines.firstIndex { ($0["error"] as? [String: Any])?["code"] as? Int == -32700 }
+        if let response, let parseError {
+            XCTAssertLessThan(response, parseError, "answers leave in the order their lines arrived")
+        }
+        connection.close()
+        XCTAssertTrue(connection.waitForEnd())
+    }
+
     // MARK: - Line classifier
 
     func testLinesAreSortedBeforeDecoding() {
