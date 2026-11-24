@@ -59,21 +59,31 @@ enum SpotlightDetector {
     static let storeButtonReach = 40.0
 
     /// Whether Return would open an app, not a web suggestion, an App Store page
-    /// or a message: Spotlight has a top result, and either the search field says
-    /// it opens it, or the result is a tile. Spotlight does not always show the
-    /// heading (Spanish iPhone, 2026-11-08: field at the top, the top result's
-    /// tile and shortcuts, no heading), so a field that says it opens `name`
-    /// counts on its own. Neither counts when the first result named `name` is
-    /// an App Store card: the field says it opens that card too. Looks at the
-    /// screen before Return because nothing afterwards names the app in front.
+    /// or a message: the search field says it opens the result, or Spotlight has
+    /// a top result and it is a tile. The field is enough on its own: Spotlight
+    /// can show an app's top hit without a heading above it (iOS 27,
+    /// 2026-11-16: "Horloge — Ouvrir" over the Horloge tile row, no heading).
+    /// Neither counts when the first result named `name` is an App Store card:
+    /// the field says it opens that card too. Looks at the screen before Return
+    /// because nothing afterwards names the app in front.
+    ///
+    /// A field that says it opens a result must hold `name` itself: Spotlight
+    /// says "Open" over a web suggestion too, and a held query the typing was
+    /// added to reads as another query (XR, iOS 18, carnet#99: "settingsgoogle
+    /// classroomgoogle… — Open" opened a Brave search and launch_app reported
+    /// Settings launched). The tile under the heading counts only while no such
+    /// field is read: its label can be the app's name in the iPhone's language.
+    /// With neither a field nor a heading read, `name`'s tile heading the first
+    /// row counts (Spanish iPhone, 2026-11-08: field at the top, the top result's
+    /// tile and shortcuts, no heading).
     static func returnOpensApp(elements: [TapPoint], name: String) -> Bool {
         if firstResultIsStoreCard(elements: elements, name: name) { return false }
+        let openQueries = elements.compactMap(openFieldQuery)
+        if !openQueries.isEmpty { return openQueries.contains(normalize(name)) }
         guard holdsQuery(elements: elements) else {
-            return elements.contains { fieldOpens($0, name: name) }
-                || SpotlightAppTile.headsFirstRow(name, in: elements)
+            return SpotlightAppTile.headsFirstRow(name, in: elements)
         }
-        return elements.contains { fieldOpens($0, name: nil) }
-            || SpotlightAppTile.topHit(in: elements) != nil
+        return SpotlightAppTile.topHit(in: elements) != nil
     }
 
     /// Whether the highest result whose text is `name` has a store button on its
@@ -90,17 +100,16 @@ enum SpotlightDetector {
         }
     }
 
-    /// Whether `element` reads as the field's completion: the query, a dash, then
-    /// the word for open ("Q Horloge - Ouvrir"). With `name`, the text before the
-    /// dash must end with it (OCR may read the magnifier glyph in front of it).
-    private static func fieldOpens(_ element: TapPoint, name: String?) -> Bool {
+    /// The query of the field's completion, normalized: `element` reads as the
+    /// query, a dash, then the word for open ("Q Horloge - Ouvrir" holds
+    /// "horloge"). Nil for any other text.
+    private static func openFieldQuery(_ element: TapPoint) -> String? {
         let parts = element.text.split(whereSeparator: { "-–—".contains($0) })
-        guard parts.count >= 2, let first = parts.first, let last = parts.last else { return false }
-        let word = SystemPhrases.fold(last.trimmingCharacters(in: .whitespaces))
-        guard openWords.contains(word) else { return false }
-        guard let name else { return true }
-        let wanted = normalize(name)
-        return !wanted.isEmpty && normalize(String(first)).hasSuffix(wanted)
+        guard parts.count >= 2, let last = parts.last,
+              openWords.contains(SystemPhrases.fold(last.trimmingCharacters(in: .whitespaces)))
+        else { return nil }
+        let query = parts.dropLast().joined(separator: "-")
+        return normalize(searchFieldText(query) ?? query)
     }
 
     /// Text that indicates Spotlight search overlay is still visible: the
