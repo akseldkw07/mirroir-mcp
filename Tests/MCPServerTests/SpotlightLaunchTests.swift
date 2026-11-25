@@ -194,7 +194,7 @@ final class SpotlightLaunchTests: XCTestCase {
         let run = launch(name: "Settings", screens: [clock, idle, mixed])
         XCTAssertNotNil(run.error)
         XCTAssertFalse(run.keys.keycodes.contains(Self.returnKey), "Return is not pressed")
-        XCTAssertTrue(run.poster.buttons.isEmpty, "nothing is tapped")
+        XCTAssertTrue(run.clicks.clicks.isEmpty, "nothing is tapped")
     }
 
     /// 18:35 on an XR: Spotlight holding "Photos" has an "App Store" section
