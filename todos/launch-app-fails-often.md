@@ -52,6 +52,8 @@ keyboard path are fine; `launch_app`'s own steps are what fail.
 | 2026-11-15 | `69ea6e5` (0.48.0) | 5 of 5 | 5 of 5 | 5 of 5 |
 | 2026-11-18 | `0228f23` plus the `EnvConfigAppIdentity` split (0.48.0 and the input fixes) | 4 of 5 | 6 of 6 | 5 of 5 |
 | 2026-11-22 | `295ddbf` (0.50.3), mirror window 249x552 pt | 0 of 3 | 3 of 3 | 2 of 2 |
+| 2026-11-25 | `2fe5c38` (0.51.0, PR #30), mirror window 238x528 pt | not tried | 3 of 7 | 2 of 3 |
+| 2026-11-25 | `5d8672d` (`main`, 0.50.3), same window | not tried | 4 of 6 | 2 of 2 |
 
 The one failure (TikTok, fourth launch in a row, 2026-11-18): "Spotlight did not show
 'TikTok' after it was typed ... Opening it from its Home Screen icon failed too: the Home
@@ -65,4 +67,12 @@ the top (step 3), not a change in 0.50.3. The mirror window was smaller than on 
 dates (249x552 against 259x573 pt), which may be why the misread now happens every time.
 Contactos, Calendario and a Home Screen tap on "zoom" opened the first time.
 
-Still open: steps 1 to 3. Step 3 now blocks TikTok at this window size.
+2026-11-25: each build was driven as a fresh server process per batch, and the first
+`launch_app` of every process failed (5 of 5 processes, both builds) with "Spotlight lists no
+app as its top result for 'Safari', so Return was not pressed", after 13 to 14 s against 8 s
+for a launch that works. Later launches in the same process worked, apart from one Safari
+launch on `2fe5c38`. So the first launch after a server start is its own failure, present on
+`main` and not new in 0.51.0. A Home Screen tap on "citibike" opened Citi Bike the first time.
+
+Still open: steps 1 to 3. Step 3 now blocks TikTok at this window size. Also open: the
+first launch after a server start fails (2026-11-25 note above).
