@@ -137,11 +137,6 @@ public enum TapPointCalculator {
     /// Matches the typical distance from an icon label to the icon center
     /// on iOS home screens (~30pt).
     static var iconOffset: Double { EnvConfig.tapIconOffset }
-    /// How far above its label's top a tab bar item is tapped, in heights of
-    /// that label. Tab icons sit closer to their labels than home screen icons
-    /// do, and the iOS 26 glass bar floats with a gap around it, so the fixed
-    /// ``iconOffset`` would tap above the bar.
-    static var tabBarLabelLift: Double { EnvConfig.tapTabBarLabelLift }
     /// Elements within this vertical distance are treated as the same row.
     /// Ensures all labels in an icon row get the same gap calculation.
     static var rowTolerance: Double { EnvConfig.tapRowTolerance }
@@ -301,9 +296,8 @@ public enum TapPointCalculator {
 
     // MARK: - Stage 3: Apply offsets
 
-    /// Converts classified rows into final tap points: tab bar labels are lifted
-    /// by their own height toward their icon, other icon rows with a sufficient
-    /// gap above by the fixed ``iconOffset``.
+    /// Converts classified rows into final tap points by applying the upward
+    /// offset to icon rows with a sufficient gap above.
     public static func applyOffsets(_ classifiedRows: [ClassifiedRow]) -> [TapPoint] {
         var results: [TapPoint] = []
 
