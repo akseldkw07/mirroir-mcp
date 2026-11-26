@@ -69,11 +69,13 @@ extension MirroirMCP {
                 at most 140 points per second, so the default 300 ms over a third \
                 of the screen takes about 2 s. \
                 The result says whether the screen moved (diff_ratio below the \
-                status bar); a swipe that moved nothing is retried once.
+                status bar); a swipe that moved nothing is retried once. \
+                Give `expect` with the text the swipe should reveal: the call waits for it \
+                and fails when it never shows.
                 """,
             inputSchema: [
                 "type": .string("object"),
-                "properties": .object([
+                "properties": .object(ActionExpectation.properties.merging([
                     "from_x": .object([
                         "type": .string("number"),
                         "description": .string("Start X coordinate"),
@@ -96,7 +98,7 @@ extension MirroirMCP {
                             "Duration of swipe in milliseconds (default: 300); a drag below flick speed is slowed to at most 140 points per second"),
                     ]),
                     "cursor_mode": cursorModeSchema,
-                ]),
+                ]) { $1 }),
                 "required": .array([
                     .string("from_x"), .string("from_y"),
                     .string("to_x"), .string("to_y"),
@@ -117,6 +119,11 @@ extension MirroirMCP {
                 }
 
                 let duration = args["duration_ms"]?.asInt() ?? EnvConfig.defaultSwipeDurationMs
+                let expectation: ActionExpectation?
+                switch ActionExpectation.parse(args) {
+                case .success(let parsed): expectation = parsed
+                case .failure(let refusal): return .error(refusal.message)
+                }
 
                 let cursorMode: CursorMode?
                 switch parseCursorMode(args) {
@@ -132,8 +139,11 @@ extension MirroirMCP {
                                 durationMs: duration, cursorMode: cursorMode)
                 }
                 if case .failed(let error) = outcome { return .error(error) }
-                return .text(SwipeVerifier.message(
-                    outcome, from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY)) ?? "")
+                let reply = SwipeVerifier.message(
+                    outcome, from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY)) ?? ""
+                guard let expectation else { return .text(reply) }
+                return ActionExpectation.check(
+                    expectation, after: reply, ctx: ctx, registry: registry, policy: policy)
             }
         ))
 
@@ -304,11 +314,13 @@ extension MirroirMCP {
                 Supported keys: return, escape, tab, delete, space, up, down, left, right, \
                 or any single character (a-z, 0-9, etc.) for shortcuts. \
                 Optional modifiers: command, shift, option, control. \
-                Examples: press Return to confirm, Escape to cancel, Ctrl+Cmd+Z for shake.
+                Examples: press Return to confirm, Escape to cancel, Ctrl+Cmd+Z for shake. \
+                Give `expect` with the text the key should lead to: the call waits for it \
+                and fails when it never shows.
                 """,
             inputSchema: [
                 "type": .string("object"),
-                "properties": .object([
+                "properties": .object(ActionExpectation.properties.merging([
                     "key": .object([
                         "type": .string("string"),
                         "description": .string(
@@ -322,7 +334,7 @@ extension MirroirMCP {
                         "description": .string(
                             "Optional modifier keys: command, shift, option, control"),
                     ]),
-                ]),
+                ]) { $1 }),
                 "required": .array([.string("key")]),
             ],
             handler: { args in
@@ -335,6 +347,11 @@ extension MirroirMCP {
                 }
 
                 let modifiers = args["modifiers"]?.asStringArray() ?? []
+                let expectation: ActionExpectation?
+                switch ActionExpectation.parse(args) {
+                case .success(let parsed): expectation = parsed
+                case .failure(let refusal): return .error(refusal.message)
+                }
 
                 let result = input.pressKey(
                     keyName: keyName, modifiers: modifiers
@@ -343,10 +360,12 @@ extension MirroirMCP {
                     return .error(result.error ?? "Failed to press key")
                 }
 
-                if modifiers.isEmpty {
-                    return .text("Pressed \(keyName)")
-                }
-                return .text("Pressed \(modifiers.joined(separator: "+"))+\(keyName)")
+                let reply = modifiers.isEmpty
+                    ? "Pressed \(keyName)"
+                    : "Pressed \(modifiers.joined(separator: "+"))+\(keyName)"
+                guard let expectation else { return .text(reply) }
+                return ActionExpectation.check(
+                    expectation, after: reply, ctx: ctx, registry: registry, policy: policy)
             }
         ))
 
