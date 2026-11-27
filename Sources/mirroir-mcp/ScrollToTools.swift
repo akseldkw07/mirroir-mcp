@@ -64,7 +64,7 @@ extension MirroirMCP {
                 ]),
                 "required": .array([.string("label")]),
             ],
-            handler: { args in
+            contextualHandler: { args, context in
                 let (ctx, err) = registry.resolveForTool(args)
                 guard let ctx else { return err! }
                 let bridge = ctx.bridge
@@ -81,24 +81,17 @@ extension MirroirMCP {
                 }
                 let maxScrolls = args["max_scrolls"]?.asInt() ?? EnvConfig.defaultScrollMaxAttempts
 
-                var anchor: CGPoint?
-                if let at = args["at"] {
-                    guard case .array(let pair) = at, pair.count == 2,
-                          let x = pair[0].asNumber(), let y = pair[1].asNumber(),
-                          let window = bridge.getWindowInfo()?.size,
-                          (0 ... window.width).contains(x), (0 ... window.height).contains(y) else {
-                        let size = bridge.getWindowInfo().map {
-                            "\(Int($0.size.width))x\(Int($0.size.height)) "
-                        } ?? ""
-                        return .error("at must be [x, y] inside the \(size)window")
-                    }
-                    anchor = CGPoint(x: x, y: y)
+                let anchor: CGPoint?
+                switch ScrollAnchorArgument.parse(args["at"], bridge: bridge) {
+                case .absent: anchor = nil
+                case .point(let point): anchor = point
+                case .invalid(let message): return .error(message)
                 }
 
                 let outcome = ScrollSeeker.seek(
                     label: label, toward: direction, maxScrolls: maxScrolls, anchor: anchor,
                     band: ScrollSeeker.band(for: ctx.profile, orientation: bridge.getOrientation()),
-                    bridge: bridge, input: input, describer: describer)
+                    bridge: bridge, input: input, describer: describer, call: context.call)
                 let reply = outcome.toolReply(label: label)
                 return reply.isError ? .error(reply.text) : .text(reply.text)
             }

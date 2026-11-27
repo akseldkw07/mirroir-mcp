@@ -29,8 +29,8 @@ enum InlineStepRunner {
     struct Report {
         let results: [StepResult]
         let screenText: String?
-        /// The label of a final text tap after which the screen read the same
-        /// as just before it, or nil.
+        /// How a final tap after which the screen read the same as just before
+        /// it is named (its text quoted, or "the point (x, y)"), or nil.
         var unchangedTap: String?
 
         var failed: Bool { results.contains { $0.status.isFailure } }
@@ -44,9 +44,7 @@ enum InlineStepRunner {
             }
             if let unchangedTap {
                 lines.append("")
-                lines.append("The screen read the same before and after tapping \"\(unchangedTap)\". "
-                    + "If the tap should change it, describe the screen again; if it still has not "
-                    + "changed, the tap did not reach the iPhone.")
+                lines.append(InlineStepRunner.unchangedNotice(tapped: unchangedTap))
             }
             if let screenText {
                 lines.append("")
@@ -107,33 +105,75 @@ enum InlineStepRunner {
     /// then read the screen once. When the last step is a passing text tap
     /// and the executor reads through a `RecordingDescriber`, the read the
     /// tap was found in is compared with the read after it.
+    ///
+    /// The executor's call is checked before each step, so a cancel stops the
+    /// run between steps and never inside one; progress is reported after each.
     static func run(_ steps: [SkillStep], executor: StepExecutor, policy: PermissionPolicy) -> Report {
+        let call = executor.call
         let reads = executor.describer as? RecordingDescriber
+        // The actions a condition or repeat runs pass the checks a top-level step does.
+        executor.actionGuard = { action in
+            drivingStop(action, executor: executor, policy: policy)
+                ?? blockedTap(action, executor: executor, policy: policy)
+        }
         var results: [StepResult] = []
         var tapRead: (label: String, elements: [TapPoint])?
+        var pointBefore: [Int: (label: String, elements: [TapPoint])] = [:]
         for (index, step) in steps.enumerated() {
-            if results.last?.status.isFailure == true {
+            if call.isCancelled {
+                results.append(StepResult(step: step, status: .skipped,
+                                          message: StepExecutor.cancelledMessage, durationSeconds: 0))
+                continue
+            }
+            // Any earlier failure stops the run, not only the step just before:
+            // a skipped step is no failure, and the step after it must not run
+            // on a screen the failed step never reached.
+            if results.contains(where: { $0.status.isFailure }) {
                 results.append(StepResult(step: step, status: .skipped,
                                           message: "skipped after the failure above",
                                           durationSeconds: 0))
                 continue
+            }
+            // A point tap is found in no read, so the screen is read (as it
+            // is, no wait) just before it, to compare with the read after.
+            if case .tap(let label) = step, let point = TapStepPoint.parse(label),
+               let before = executor.ocrDescriber.describe(settleTimeoutUs: 0) {
+                pointBefore[index] = (pointName(point), before.elements)
             }
             let result = drivingStop(step, executor: executor, policy: policy)
                 ?? blockedTap(step, executor: executor, policy: policy)
                 ?? executor.execute(step: step, stepIndex: index, skillName: runName)
             results.append(result)
             tapRead = nil
-            if case .tap(let label) = step, TapStepPoint.parse(label) == nil,
-               result.status == .passed, let before = reads?.lastResult {
-                tapRead = (label, before.elements)
+            if case .tap(let label) = step, result.status == .passed {
+                if let point = pointBefore[index] {
+                    tapRead = point
+                } else if TapStepPoint.parse(label) == nil, let before = reads?.lastResult {
+                    tapRead = ("\"\(label)\"", before.elements)
+                }
             }
+            call.report(progress: Double(index + 1), total: Double(steps.count), message: step.displayName)
         }
-        let after = executor.describer.describe()
+        // A cancelled run answers nobody: the closing read is not taken.
+        let after = call.isCancelled ? nil : executor.describer.describe()
         var report = Report(results: results, screenText: after.map(screenText))
         if let tapRead, let after, readsTheSame(tapRead.elements, after.elements) {
             report.unchangedTap = tapRead.label
         }
         return report
+    }
+
+    /// What the reply says when the screen read the same before and after a
+    /// tap on `tapped` (a quoted label, or "the point (x, y)").
+    static func unchangedNotice(tapped: String) -> String {
+        "The screen read the same before and after tapping \(tapped). If the tap should "
+            + "change it, describe the screen again; if it still has not changed, the tap did "
+            + "not reach the iPhone."
+    }
+
+    /// How a point tap is named in a reply.
+    static func pointName(_ point: (x: Double, y: Double)) -> String {
+        "the point (\(ScreenshotGeometry.whole(point.x)), \(ScreenshotGeometry.whole(point.y)))"
     }
 
     /// Whether two reads show the same screen: the same structural text, with
@@ -174,7 +214,7 @@ enum InlineStepRunner {
 
     /// The text a read shows. Unlabeled icons carry a placeholder name, not
     /// text the screen shows, so they are left out.
-    private static func screenText(_ result: ScreenDescriber.DescribeResult) -> String {
+    static func screenText(_ result: ScreenDescriber.DescribeResult) -> String {
         ScenarioStepFormatter.screenText(
             elements: result.elements.filter { $0.text != CoreMLElementDetector.iconLabel })
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -182,7 +222,9 @@ enum InlineStepRunner {
 
     /// The executor for a run on `ctx`: the target's own input and OCR, with
     /// failure screenshots kept out of the server's working directory.
-    static func executor(for ctx: TargetContext, registry: TargetRegistry) -> StepExecutor {
+    static func executor(
+        for ctx: TargetContext, registry: TargetRegistry, call: MCPCallControl = MCPCallControl()
+    ) -> StepExecutor {
         let defaults = StepExecutorConfig.default
         let config = StepExecutorConfig(
             waitForTimeoutSeconds: defaults.waitForTimeoutSeconds,
@@ -190,10 +232,12 @@ enum InlineStepRunner {
             screenshotDir: (NSTemporaryDirectory() as NSString).appendingPathComponent(runName),
             dryRun: false)
         // Recorded so a final text tap can be compared with the read it was found in.
-        return StepExecutor(bridge: ctx.bridge, input: ctx.input,
-                            describer: RecordingDescriber(wrapping: ctx.describer), capture: ctx.capture,
-                            config: config, registry: registry,
-                            ocrDescriber: ctx.ocrDescriber, profile: ctx.profile)
+        let executor = StepExecutor(bridge: ctx.bridge, input: ctx.input,
+                                    describer: RecordingDescriber(wrapping: ctx.describer), capture: ctx.capture,
+                                    config: config, registry: registry,
+                                    ocrDescriber: ctx.ocrDescriber, profile: ctx.profile)
+        executor.call = call
+        return executor
     }
 
     /// The name failure screenshots are filed under.
@@ -209,7 +253,7 @@ enum InlineStepRunner {
             if case .denied(let reason) = policy.checkAppLaunch(InputSimulation.openURLAppName) { return reason }
         case .setNetwork:
             if case .denied(let reason) = policy.checkAppLaunch(NetworkToggle.settingsAppName) { return reason }
-        case .measure(_, let action, _, _):
+        case .measure(_, let action, _, _), .condition(_, let action), .repeatUntil(_, _, let action):
             return denial(for: action, policy: policy)
         default:
             break
@@ -238,6 +282,8 @@ enum InlineStepRunner {
         case .longPress: return "long_press"
         case .drag: return "drag"
         case .switchTarget: return "switch_target"
+        // Reading the screen is always allowed; the action is what needs permission.
+        case .condition(_, let action), .repeatUntil(_, _, let action): return toolName(of: action)
         case .scene, .skipped, .invalid: return "run_steps"
         }
     }

@@ -7,7 +7,7 @@ All 44 tools exposed by the MCP server. Mutating tools require [permission](perm
 | Tool | Parameters | Description |
 |------|-----------|-------------|
 | `screenshot` | `settle_ms`?, `scale`?, `region`? | Capture the iPhone screen as a PNG, with a line stating its pixel size, the window points it shows, and the pixels-per-point factor |
-| `describe_screen` | `scroll`?, `omit_screenshot`?, `query`?, `text_only`?, `settle_ms`? | Analyze the screen and return UI elements with tap coordinates plus a grid-overlaid screenshot. Uses local OCR or AI vision depending on `screenDescriberMode`. `scroll: true` does a full-page scroll to capture all elements. `omit_screenshot: true` returns text only (no image). `query` lists only elements whose text contains it (case- and accent-insensitive; icons omitted), and `text_only: true` drops the coordinates, so reading one value costs a line or two. `settle_ms` sets how long to wait for the screen to stop changing first. |
+| `describe_screen` | `scroll`?, `max_scrolls`?, `at`?, `omit_screenshot`?, `query`?, `text_only`?, `settle_ms`? | Analyze the screen and return UI elements with tap coordinates plus a grid-overlaid screenshot. Uses local OCR or AI vision depending on `screenDescriberMode`. `scroll: true` does a full-page scroll to capture all elements, up to `max_scrolls` scrolls, at the point `at` for a list inside the screen, and says why it stopped. `omit_screenshot: true` returns text only (no image). `query` lists only elements whose text contains it (case- and accent-insensitive; icons omitted), and `text_only: true` drops the coordinates, so reading one value costs a line or two. `settle_ms` sets how long to wait for the screen to stop changing first. |
 | `listen` | `seconds`?, `language`? | Hear what the phone plays, as text: records the sound iPhone Mirroring plays for up to `seconds` (1 to 60, default 10; it stops early when nothing plays from the start or once the sound has ended) and transcribes it on the Mac in `language` (BCP-47, default the Mac's). Read-only; needs macOS 26. See [Listening](#listening). |
 | `start_recording` | `output_path`? | Start video recording of the mirrored screen |
 | `stop_recording` | — | Stop recording and return the .mov file path. A recording that already ended on its own (display sleep can end it) still returns its file, with a note that the video stops early; `start_recording` refuses to start another until that file is collected |
@@ -20,7 +20,7 @@ All 44 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `pinch` | `x`, `y`, `scale`, `duration_ms`? | Two-finger pinch centred at (x, y): `scale` > 1 spreads the fingers (zoom in), < 1 pinches them (zoom out); the spread ends at exactly `scale` times its start (0.1-10, 100-5000ms, default 500ms). Reaches iOS as a UIKit two-finger gesture (Maps, Photos); games that read raw touches may ignore it. Needs a Mac with a built-in trackpad or a Magic Trackpad; refused while a touch is held |
 | `rotate` | `x`, `y`, `degrees`, `duration_ms`? | Two-finger rotation centred at (x, y) by `degrees`: positive counter-clockwise, negative clockwise (non-zero, up to 360 either way, 100-5000ms, default 500ms). Same delivery and trackpad requirement as `pinch` |
 | `hold_keys` | `keys`, `duration_ms`?, `drag`? | Hold 1-6 keys for `duration_ms` (100-10000ms, default 1000ms), then release everything in reverse order. Keys are single unshifted characters (`w`), modifiers (`shift`, `command`, `option`, `control`), or named keys (`space`, `up`, ...). Plain keys re-post key-down every 50ms like a held physical key; modifiers are held without repeating. Optional `drag` `{from_x, from_y, to_x, to_y, button: left\|right}` holds that mouse button across the same duration. For games that switch to mouse/keyboard controls (e.g. Roblox: `w` walks while a right drag turns the camera); touch-only games ignore keys. Refused while a touch is held or when the mirroring window is not the frontmost app; stops early and releases everything if focus leaves it mid-hold |
-| `type_text` | `text`, `clear` | Type text — adds to what the field holds; `clear: true` empties the focused field first (Cmd+A, then Delete; clear only a field you just focused, since with none focused Cmd+A acts on whatever the app selects) — activates iPhone Mirroring and sends keystrokes. Characters with no key are pasted one run at a time and each paste is confirmed by OCR; one not seen (or unreadable, like emoji) returns an error ([limitations](limitations.md#clipboard-paste-is-confirmed-by-ocr)) |
+| `type_text` | `text`, `clear`?, `keyboard_layout`? | Type text — adds to what the field holds; `clear: true` empties the focused field first (Cmd+A, then Delete; clear only a field you just focused, since with none focused Cmd+A acts on whatever the app selects) — sends keystrokes to iPhone Mirroring. `keyboard_layout` names the connected iPhone's layout when `keyboardLayout` lists several ([limitations](limitations.md#iphones-with-different-keyboards-on-one-mac)). Characters with no key are pasted one run at a time and each paste is confirmed by OCR; one not seen (or unreadable, like emoji) returns an error ([limitations](limitations.md#clipboard-paste-is-confirmed-by-ocr)) |
 | `press_key` | `key`, `modifiers`? | Send a special key (return, escape, tab, delete, space, arrows) with optional modifiers (command, shift, option, control) |
 | `shake` | — | Trigger shake gesture (Ctrl+Cmd+Z) for undo/dev menus |
 | `launch_app` | `name` | Open app by name via Spotlight search; opens the top result only when it is an app (tapping its tile, or Return when no tile is read), so a missing app fails instead of opening a web or App Store result. When Spotlight never shows the typed name (on iOS 26 it can take typing only once per iPhone Mirroring session), it closes Spotlight and taps the Home Screen icon labeled exactly `name` on the page Home shows (no page is turned); apps on other pages, in folders, the Dock or only the App Library are not found that way |
@@ -34,8 +34,8 @@ All 44 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `read_scrolling_list` | `max_pages`?, `from_top`? | Every screen of the current list as overlapping page images, top to bottom (from the top unless `from_top: false`). Stops at the end of the list or `max_pages`; the summary names pages that don't overlap |
 | `reset_app` | `name` | Force-quit an app via the App Switcher |
 | `measure` | `action`, `until`, `max_seconds`?, `name`? | Time a screen transition after an action |
-| `run_steps` | `steps` | Run several proven steps in one call, in the [step grammar](#step-types) (`"tap: <text on screen>"`, `"tap: @324,113"` for a point, `"type: calculator"`, `"wait_for: Get"`, `"home"`). Every step is checked against the permission policy before the first runs; the run stops at the first failure and the reply ends with the text on screen |
-| `set_network` | `mode` | Toggle network settings (airplane, Wi-Fi, cellular) via Settings |
+| `run_steps` | `steps`, `task`? | Run several proven steps in one call, in the [step grammar](#step-types) (`"tap: <text on screen>"`, `"tap: @324,113"` for a point, `"type: calculator"`, `"wait_for: Get"`, `"home"`). Every step is checked against the permission policy before the first runs; the run stops at the first failure and the reply ends with the text on screen With `task` (a few words, one line, no double quotes), a run whose every step passed is added to that task, and the reply ends with a SKILL.md draft of every passing run given the same `task` since the server started, ready to save under `~/.mirroir-mcp/skills/`. A failed run is not added. The server keeps 20 tasks and 200 steps per task, in memory only. |
+| `set_network` | `mode` | Toggle network settings (airplane, Wi-Fi, cellular) via Control Center on iOS 27, else Settings |
 | `get_orientation` | — | Report portrait/landscape and window dimensions |
 | `status` | — | Connection state, window geometry, and device readiness |
 | `check_health` | — | Comprehensive setup diagnostic: mirroring, accessibility, screen capture |
@@ -60,9 +60,14 @@ Coordinates are in points relative to the mirroring window's top-left corner. Us
 `describe_screen` returns detected elements with their tap coordinates, plus a grid-overlaid screenshot for visual context. The backend depends on `screenDescriberMode`:
 
 - **Local OCR (default)** — Apple Vision OCR for text recognition. If a YOLO CoreML model is installed in `~/.mirroir-mcp/models/`, the server auto-detects it and merges icon detections — giving the AI tap targets for non-text elements (buttons, toggles, icons) that text-only OCR misses. See [Icon Detection](screen-intelligence.md#icon-detection-yolo-coreml) for setup.
-- **AI Vision** — When `screenDescriberMode` is `"vision"` (or `"auto"` with the embacle FFI linked), the screenshot is sent to an AI vision model that identifies UI elements semantically — cards, tabs, buttons, navigation structure — instead of raw text fragments. See [AI Vision Mode](screen-intelligence.md#ai-vision-mode-embacle) for setup.
+- **AI Vision** — When `screenDescriberMode` is `"vision"`, the screenshot is sent to an AI vision model that identifies UI elements semantically — cards, tabs, buttons, navigation structure — instead of raw text fragments. See [AI Vision Mode](screen-intelligence.md#ai-vision-mode-embacle) for setup.
 
 Set `scroll: true` to perform a full-page scroll before returning results. The server scrolls through the entire page, deduplicates elements across viewports, and returns all detected elements — not just those visible in the initial viewport.
+
+- `max_scrolls` (default: 10, the `defaultScrollMaxAttempts` setting): the most scrolls to make.
+- `at`: the point `[x, y]` to scroll at, for a list inside the screen such as a carousel or a sheet. The swipe is the one `scroll_to` sends there. Default: the page.
+- Both apply only with `scroll: true`: passed without it, the call is refused rather than read one screen and drop them.
+- The reply's `_meta` line says why the scrolling stopped. `stop_reason=end_of_content` means a scroll revealed nothing new, or less than a tenth of what it showed, so the list is read to its end. `max_scrolls` means content was still arriving when the budget ran out: read more with a larger `max_scrolls`. `scroll_failed` and `read_failed` mean a gesture could not be sent or the screen could not be read after one, and `no_window` that the window size is unknown, so nothing was scrolled.
 
 Set `omit_screenshot: true` to return only the text description without the base64 PNG image. This saves context window space during long automation sessions where screenshots aren't needed. The `MIRROIR_OMIT_SCREENSHOT` environment variable (or `describeScreenOmitScreenshot` setting) controls the default; the tool parameter overrides it per-call.
 
@@ -83,7 +88,7 @@ Only labels are taken from the tree: a region that merely has a name (a browser,
 
 ## Typing Workflow
 
-`type_text` and `press_key` send CGEvent key events addressed to the iPhone Mirroring process, after one window event makes the mirror the key window of its own app. iPhone Mirroring is not activated: the app you are using keeps focus (see [limitations](limitations.md#focus-stealing)).
+`type_text` and `press_key` send CGEvent key events addressed to the iPhone Mirroring process, after one window event makes the mirror the key window of its own app. Through macOS 26, iPhone Mirroring is not activated: the app you are using keeps focus (see [limitations](limitations.md#focus-stealing)).
 
 - Characters are mapped to macOS virtual keycodes with automatic keyboard layout translation — non-US layouts (French AZERTY, German QWERTZ, etc.) are supported via UCKeyTranslate
 - iOS autocorrect applies, and it rewrites words as they are typed (in Notes, "Thu teh adress" lands as "They the adress"; a French keyboard turns English words into French ones). After typing, `type_text` reads the text back from the screen; when the screen does not show what was typed, the call still succeeds and its result carries a notice saying so. A password field hides its text, so the notice is expected there.
@@ -131,14 +136,14 @@ When the text never shows, the error says why the scrolling stopped. `stop_reaso
 
 Steps:
 1. Launch the app via Spotlight (handles localization — `Settings` → `Réglages` on a French iPhone).
-2. Open the App Switcher. The just-launched app is the centered card.
-3. Drag the centered card upward to dismiss it (touch drag, not scroll-wheel swipe — iOS only accepts touch events for card dismiss).
+2. Open the App Switcher and locate the app's card: by its label, else by matching the text the app showed against the cards. A card that cannot be located is an error; nothing is dragged.
+3. Drag that card upward to dismiss it (touch drag, not scroll-wheel swipe — iOS only accepts touch events for card dismiss).
 4. Return to the home screen.
 
 Use before `launch_app` to ensure a fresh app state. In a skill run by `mirroir test`,
 `reset_app:` is a destructive step that needs `--confirm-destructive`, except when the very next
 step is a `launch:` of the same app (exact name, case-sensitive after trimming) — the pair every
-emitted `.ios.yaml` flow opens with. Tunable via `appSwitcherCardXFraction`, `appSwitcherCardYFraction`, `appSwitcherSwipeDistance`, and `appSwitcherSwipeDurationMs` if your iPhone model places the centered card differently.
+emitted `.ios.yaml` flow opens with. Tunable via `appSwitcherCardYFraction`, `appSwitcherSwipeDistance`, and `appSwitcherSwipeDurationMs` if your iPhone model places the cards differently.
 
 ## Measure
 
@@ -151,11 +156,15 @@ emitted `.ios.yaml` flow opens with. Tunable via `appSwitcherCardXFraction`, `ap
 
 ## Set Network
 
-`set_network` toggles network settings on the iPhone by navigating the Settings app. After toggling, it returns to the home screen. It finds the row by its label, read from the Settings Row sections of [`system-phrases.md`](../Sources/mirroir-mcp/Resources/system-phrases.md), which list the English labels (Airplane, Wi-Fi, Cellular); on a phone in another language, add the row's label there.
+`set_network` toggles network settings on the iPhone, then returns to the home screen. It reads the switch first, taps only when it is not already in the asked state, and reads it again.
+
+When iPhone Mirroring gives Control Center (View > Control Centre, Cmd-4, on macOS 27 with an iPhone on iOS 27), the switch is a tile on Control Center's connectivity page, and the Settings app is not opened. Each tile has a label and one line under it: the line reads `Off` (`Non`) when the tile is off, and a network or SIM name when it is on. The state is read with the configured screen describer. Only the tile's round icon toggles it (a tap on the tile's body does nothing, and on Control Center's first page the connectivity tiles are one button that opens the connectivity page), so the tap goes to the icon, placed from the tile's label and state line as local OCR reads them. When either the state or the tile's text cannot be read, the tool refuses without a tap. Control Center's Wi-Fi tile never turns the radio off: `wifi_off` there drops the network until the next day, the tile reads `Not Connected` (`Non connecté`), and iPhone Mirroring stays connected. Airplane Mode on cuts iPhone Mirroring within about a minute, so `airplane_off` has to be done on the iPhone. Mirroring refuses Control Center to an iPhone before iOS 27 ("Update Required"), and macOS 26 has no such command; the Settings app is used then.
+
+Both paths find their labels in [`system-phrases.md`](../Sources/mirroir-mcp/Resources/system-phrases.md): the Control Center Tile sections and the Settings Row sections list the English and French labels; on a phone in another language, add the label there. In Settings, cellular data on an iPhone with two SIMs is a menu, not a switch, and is refused; its Control Center tile is a plain switch.
 
 Supported modes: `airplane_on`, `airplane_off`, `wifi_on`, `wifi_off`, `cellular_on`, `cellular_off`.
 
-This is the most environment-dependent tool — it relies on the Settings app UI layout, which varies by locale and iOS version. `ElementMatcher` substring matching provides some resilience across locales.
+This is the most environment-dependent tool: it relies on the Control Center and Settings layouts, which vary by locale and iOS version.
 
 ## Skills
 
@@ -317,10 +326,30 @@ Steps are intents — the AI maps each to the appropriate MCP tool calls:
 | `scene: { skill, max_frames, max_tokens, max_seconds, decider }` | plays a `kind: game` skill under a hard budget; `decider` names the move picker a `decider: required` skill needs — see [Scenes](skills-marketplace.md#scenes) |
 | `target: { kind: ios }` / `target: { kind: macos, name: "…" }` | calls `switch_target` — switch to the iPhone or to a configured desktop window |
 | `remember: "instruction"` | AI reads dynamic data from screen and holds it for later steps |
+| `condition: visible "Label" -> tap: Label` | runs the action only when the element is visible (`not visible` for absent); runs in `mirroir test` and `run_steps` — see below |
+| `repeat: until visible "Label", max 8 -> swipe: up` | runs the action until the element is visible, at most `max` times (1 to 50); runs in `mirroir test` and `run_steps` — see below |
 | `condition:` | Branch based on screen state — see below |
 | `repeat:` | Loop over steps until a screen condition is met — see below |
 | `verify: "instruction"` | AI-only step — the AI interprets the instruction against the current screen |
 | `summarize: "instruction"` | AI-only step — the AI interprets the instruction against the current screen |
+
+### Conditions and repeats that run without an AI
+
+A `condition` or `repeat` written on one line, as one visibility check and one action, runs in `mirroir test`, in a compiled replay and in `run_steps`:
+
+```yaml
+- condition: visible "Allow" -> tap: Allow
+- condition: not visible "Signed in" -> tap: "Sign In"
+- repeat: until visible "Done", max 8 -> swipe: up
+- repeat: until not visible "Loading", max 5 -> wait_for: "Ready" timeout: 2
+```
+
+- The screen is read just before the check. A condition whose check does not hold passes without running its action.
+- A repeat reads the screen before each run and passes as soon as its check holds, without running the action again. It fails when the check still does not hold after `max` runs, when a run fails, or when the call is cancelled between runs. `max` is required, from 1 to 50.
+- The action is one plain step: not another `condition` or `repeat`, not a `measure`, `scene`, `target` or AI-only step. It needs the same permission as when it runs on its own, and in `run_steps` it passes the same blocked-app and driving-mode checks.
+- The check is replayed live from a compiled skill: the recorded run says nothing about what the screen will show next time.
+
+Any other `condition` or `repeat` value is read by the AI, as described next, and `mirroir test` reports it not evaluated. The steps nested in a multi-line block belong to it: `mirroir test` and a compiled replay never run them on their own.
 
 ### Conditions
 

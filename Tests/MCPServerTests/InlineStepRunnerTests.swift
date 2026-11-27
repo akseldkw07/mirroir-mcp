@@ -87,6 +87,20 @@ final class InlineStepRunnerTests: XCTestCase {
         XCTAssertTrue(result.text.contains("2. SKIP type: \"never typed\""), result.text)
     }
 
+    /// XR, 2026-11-24: a timed-out wait_for, one skipped step, then "type" and
+    /// Return ran on whatever screen was up.
+    func testEveryStepAfterAFailureIsSkipped() {
+        let result = call(makeServer(policy: allowAll), "run_steps",
+                          steps(["tap: Purchase", "tap: Search", "type: never typed", "press_key: return"]))
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(input.tapCalls.isEmpty, "nothing is tapped after the failure")
+        XCTAssertTrue(input.typeCalls.isEmpty, "nothing is typed after the failure")
+        XCTAssertFalse(input.keyboardLog.contains { $0.hasPrefix("key:") }, "no key is pressed after the failure")
+        XCTAssertTrue(result.text.contains("2. SKIP tap: \"Search\""), result.text)
+        XCTAssertTrue(result.text.contains("3. SKIP type: \"never typed\""), result.text)
+        XCTAssertTrue(result.text.contains("4. SKIP press_key: \"return\""), result.text)
+    }
+
     /// A search field showing its query has no text to name it by (App Store,
     /// measured on an XR): a point is the only way to reach it from a step.
     func testATapStepCanNameAPoint() {
@@ -96,7 +110,7 @@ final class InlineStepRunnerTests: XCTestCase {
         XCTAssertEqual(input.tapCalls.first?.x, 324)
         XCTAssertEqual(input.tapCalls.first?.y, 113)
         XCTAssertEqual(input.typeCalls, ["weather"])
-        XCTAssertEqual(describer.describeCallCount, 1, "only the final read: a point needs no OCR")
+        XCTAssertEqual(describer.describeCallCount, 2, "a read just before the point, and the final one")
     }
 
     // MARK: - A tap the screen did not answer
@@ -138,12 +152,42 @@ final class InlineStepRunnerTests: XCTestCase {
         XCTAssertFalse(InlineStepRunner.readsTheSame(before, opened))
     }
 
-    func testOnlyAFinalTextTapIsCompared() {
+    func testOnlyAFinalTapIsCompared() {
         let typed = call(makeServer(policy: allowAll), "run_steps",
                          steps(["tap: Search", "type: calculator"]))
         XCTAssertFalse(typed.text.contains("read the same"), typed.text)
-        let point = call(makeServer(policy: allowAll), "run_steps", steps(["tap: @324,113"]))
-        XCTAssertFalse(point.text.contains("read the same"), "a point tap has no read before it")
+        let pointThenType = call(makeServer(policy: allowAll), "run_steps",
+                                 steps(["tap: @324,113", "type: weather"]))
+        XCTAssertFalse(pointThenType.text.contains("read the same"), pointThenType.text)
+    }
+
+    /// carnet#91: an unlabeled close ✕ is tapped by point, which had no read to
+    /// compare, so a tap that never arrived passed in silence.
+    func testAFinalPointTapOnAnUnchangedScreenSaysSo() {
+        let result = call(makeServer(policy: allowAll), "run_steps", steps(["tap: @324,113"]))
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertTrue(result.text.contains(
+            "The screen read the same before and after tapping the point (324, 113)"), result.text)
+    }
+
+    func testATapAtAPointOnAnUnchangedScreenSaysSo() {
+        let result = call(makeServer(policy: allowAll), "tap", ["x": .number(198), "y": .number(56)])
+        XCTAssertFalse(result.isError, "an unchanged screen is a hint, not a failure: \(result.text)")
+        XCTAssertTrue(result.text.hasPrefix("Tapped at (198, 56)"), result.text)
+        XCTAssertTrue(result.text.contains(
+            "The screen read the same before and after tapping the point (198, 56)"), result.text)
+        XCTAssertTrue(result.text.hasSuffix("Screen now: Search Today"), result.text)
+    }
+
+    func testATapAtAPointThatChangesTheScreenSaysNothingMore() {
+        let after = ScreenDescriber.DescribeResult(
+            elements: [TapPoint(text: "Games", tapX: 60, tapY: 100, confidence: 0.99)],
+            screenshotBase64: "")
+        describer.describeResults = [describer.describeResult, after]
+        let result = call(makeServer(policy: allowAll), "tap", ["x": .number(198), "y": .number(56)])
+        XCTAssertFalse(result.isError, result.text)
+        XCTAssertFalse(result.text.contains("read the same"), result.text)
+        XCTAssertEqual(result.text, "Tapped at (198, 56)\n\nScreen now: Games")
     }
 
     // MARK: - Blocked apps (carnet#78)
@@ -168,6 +212,36 @@ final class InlineStepRunnerTests: XCTestCase {
         XCTAssertTrue(inSteps.isError, inSteps.text)
         XCTAssertEqual(input.tapCalls.map(\.y), [289 - SpotlightAppTile.iconTapLift],
                        "only the allowed Horloge tap was sent, to its icon")
+    }
+
+    /// The action a condition gates passes the same blocked-app check a
+    /// top-level tap does: the condition holds, the tap is still refused.
+    func testATapOnABlockedAppsIconInsideAConditionSendsNothing() {
+        describer.describeResult = ScreenDescriber.DescribeResult(
+            elements: [TapPoint(text: "Horloge", tapX: 263, tapY: 289, confidence: 0.9),
+                       TapPoint(text: "Réglages", tapX: 263, tapY: 394, confidence: 0.9),
+                       TapPoint(text: "Q Rechercher", tapX: 215, tapY: 784, confidence: 0.9)],
+            screenshotBase64: "")
+        let policy = PermissionPolicy(skipPermissions: false, config: PermissionConfig(
+            allow: ["*"], blockedApps: ["Réglages"]))
+        let result = call(makeServer(policy: policy), "run_steps",
+                          steps([#"condition: visible "Réglages" -> tap: Réglages"#]))
+        XCTAssertTrue(result.isError, result.text)
+        XCTAssertTrue(result.text.contains("'Réglages' icon"), result.text)
+        XCTAssertTrue(input.tapCalls.isEmpty)
+    }
+
+    /// A condition needs the permission of the action it may run, so a denied
+    /// action refuses the list before anything runs.
+    func testAConditionIsCheckedForTheActionItRuns() {
+        let policy = PermissionPolicy(skipPermissions: false,
+                                      config: PermissionConfig(allow: ["run_steps", "tap"]))
+        let refusal = InlineStepRunner.prepare(
+            ["tap: Search", #"condition: visible "Search" -> type: calculator"#], policy: policy)
+        guard case .failure(.denied(let index, _, _)) = refusal else {
+            return XCTFail("a gated type needs type_text's permission, got \(refusal)")
+        }
+        XCTAssertEqual(index, 1)
     }
 
     func testTextThatLooksLikeNumbersIsStillText() {

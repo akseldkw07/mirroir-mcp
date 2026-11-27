@@ -2,6 +2,37 @@
 
 What changed for you in each release. Full notes, with every commit, are on [GitHub Releases](https://github.com/jfarcand/mirroir-mcp/releases).
 
+## Unreleased
+
+- **Stop a long call.** Press Esc in your client (it sends `notifications/cancelled`), or close the connection to `mirroir-mcp serve`: `run_steps`, `scroll_to`, `measure` and `generate_skill` explore stop at their next check, between two actions on the phone, never during one. A cancelled explore keeps the screens it mapped.
+
+- **Progress on long calls.** A client that asks for progress (`progressToken`) sees each step of `run_steps`, each scroll of `scroll_to`, and explore's screens and actions as they happen. Over `serve`, the reply becomes an event stream when the client accepts one.
+
+- **MCP 2026-07-28 rules, followed closely.** Over HTTP, a malformed request and a missing client capability are a 400; an unsupported `MCP-Protocol-Version` lists the versions to retry with (-32022); header values with characters a header cannot hold are refused. `tools/list` comes back sorted by name.
+
+- **One `serve` client no longer speaks for another.** Each request relies only on the capabilities it declared; an `initialize` from one HTTP client is no longer applied to the next. `classify_screen` works again for clients on the `initialize` handshake.
+
+- **The first screen read after an upgrade no longer waits for macOS.** On macOS 27, the first text read by a new build compiles Vision's model, which took close to a minute. The server now does that read in the background as it starts.
+
+- **Every tool has a title, and says whether it reaches beyond the Mac.** `tools/list` gives each tool a display name (`Describe Screen`) and an `openWorldHint`: false only for the tools that read or write local files (skills, notes, targets).
+- **`set_network` uses Control Center on iOS 27.** On macOS 27 with an iPhone on iOS 27, it opens Control Center from iPhone Mirroring and sets the Airplane Mode, Wi-Fi or cellular data tile there, without opening the Settings app; that also covers cellular data on an iPhone with two SIMs, which Settings shows as a menu. Older iPhones and macOS 26 still go through Settings ([tools](docs/tools.md#set-network)).
+
+## 0.51.0 (2026-11-22)
+
+- **A tap at a point says when the screen did not change.** Text taps already did; a tap at x and y (an unlabeled ✕, an icon) and `tap: @x,y` in `run_steps` now read the screen before and after, end with "Screen now: …", and say so when nothing changed, so a tap that never reached the iPhone no longer passes in silence.
+
+- **Opening an app from its Home Screen icon no longer opens its neighbour.** When the icon above a name went undetected, the tap could take the icon of the app above it: "App Store" opened Camera. An icon now counts only when no other app's name sits between it and the name tapped.
+
+- **`npx` on an Intel Mac says why it stops.** Releases ship an Apple Silicon binary only; the npm installer used to fail on a download that does not exist, and now names the gap and points to the source install ([install](docs/install.md)).
+
+- **Two unused App Switcher settings are gone.** `appSwitcherCardOffset` and `appSwitcherCardXFraction` no longer did anything since the card is found by its label; a `settings.json` that still names them is ignored, as with any unknown key.
+
+- **Screen reads recover on macOS 27 when Vision's model cache goes away.** A server running for a while could end up failing every read with `e5rtError … 13` until it was restarted. When every read in the server fails, mirroir now reads the screen in a fresh process. The first read after an upgrade or reinstall still takes about 50 s while macOS compiles the model ([troubleshooting](docs/troubleshooting.md)).
+
+- **`mirroir-mcp recognize-text <image>`** prints the text in a PNG or JPEG as JSON. mirroir runs it itself for the recovery above.
+
+- **mirroir-run** drops the unmaintained `chrono` crate for `jiff`, and moves to `url` 2.5.9 for a security fix.
+
 ## 0.50.3 (2026-11-19)
 
 - **Swipes move the content again.** Every scroll frame lost its movement before it was sent: a slow drag reached the iPhone as zero, and larger frames were cut short. Drags now page the Home Screen and scroll lists by the distance asked, both when iPhone Mirroring is brought to the front and when input goes straight to its window.

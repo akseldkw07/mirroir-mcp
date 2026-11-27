@@ -120,7 +120,7 @@ final class SpotlightDetectorTests: XCTestCase {
 
     func testAFieldSayingOpenMeansReturnOpensAnApp() {
         let screen = [point("Meilleur résultat", 86, 107), point("Q Horloge - Ouvrir", 133, 874)]
-        XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: screen, name: "Clock"))
+        XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: screen, name: "Horloge"))
         let english = [point("Top Hit", 86, 107), point("Clock — Open", 133, 874)]
         XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: english, name: "Clock"))
     }
@@ -135,6 +135,30 @@ final class SpotlightDetectorTests: XCTestCase {
         ]
         XCTAssertFalse(SpotlightDetector.holdsQuery(elements: screen))
         XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: screen, name: "Horloge"))
+    }
+
+    /// XR, iOS 18, 2026-11-24 (carnet#99): "google classroom" in Spotlight. The
+    /// field says "Open" over an App Store card and a Brave web suggestion.
+    private var googleClassroomScreen: [TapPoint] {
+        [
+            point("Top Hit", 45, 96), point("Google Classroom", 161, 132), point("Get", 285, 148),
+            point("Education", 130, 149), point(icon, 187, 151), point("Suggestions", 61, 216),
+            point("google classroom", 115, 253), point("Siri Knowledge", 68, 298),
+            point("Search in Apps", 68, 661), point("• google classroom - Open", 144, 731),
+        ]
+    }
+
+    func testAFieldOpeningAnotherQueryIsNotTheNamedApp() {
+        XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: googleClassroomScreen, name: "Settings"))
+        let prefixed = googleClassroomScreen.map {
+            $0.text.hasSuffix("- Open") ? point("Q settingsgoogle classroomgoogl - Open", 144, 731) : $0
+        }
+        XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: prefixed, name: "Settings"),
+                       "typing added to a held query names another search")
+    }
+
+    func testAFieldOpeningAnAppStoreCardIsNoApp() {
+        XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: googleClassroomScreen, name: "Google Classroom"))
     }
 
     func testAFieldNamingAnotherResultWithoutAHeadingIsNoApp() {
@@ -197,12 +221,14 @@ final class SpotlightDetectorTests: XCTestCase {
         XCTAssertFalse(SpotlightDetector.holdsQuery(elements: screen))
     }
 
-    /// Spanish iPhone, iOS 26, 2026-11-08: "r" typed; Spotlight completed it to Reloj (Clock).
-    func testASpanishTopHitWithAFieldSayingOpenMeansReturnOpensAnApp() {
+    /// Spanish iPhone, iOS 26, 2026-11-08: "r" typed; Spotlight completed it to
+    /// Reloj (Clock). The field opens Reloj, not the Clock that was asked for,
+    /// so Return is not pressed (carnet#99).
+    func testASpanishFieldOpeningAnotherNameIsNotTheNamedApp() {
         let screen = [point("Mejor resultado", 59, 93), point("Reloj", 57, 134),
                       point("Recordatorios", 185, 135), point("a reloj - Abrir", 79, 624)]
         XCTAssertTrue(SpotlightDetector.holdsQuery(elements: screen))
-        XCTAssertTrue(SpotlightDetector.returnOpensApp(elements: screen, name: "Clock"))
+        XCTAssertFalse(SpotlightDetector.returnOpensApp(elements: screen, name: "Clock"))
     }
 
     /// Spanish iPhone, 2026-11-08 18:20: "Reloj" typed; the field sits at the top,

@@ -251,16 +251,16 @@ public enum EnvConfig {
         readDouble("tapIconOffset", default: TimingConstants.tapIconOffset)
     }
 
+    public static var tapTabBarIconOffset: Double {
+        readDouble("tapTabBarIconOffset", default: TimingConstants.tapTabBarIconOffset)
+    }
+
     public static var tapRowTolerance: Double {
         readDouble("tapRowTolerance", default: TimingConstants.tapRowTolerance)
     }
 
     public static var tapBottomZoneFraction: Double {
         readDouble("tapBottomZoneFraction", default: TimingConstants.tapBottomZoneFraction)
-    }
-
-    public static var tapTabBarLabelLift: Double {
-        readDouble("tapTabBarLabelLift", default: TimingConstants.tapTabBarLabelLift)
     }
 
     public static var tapIconRowMaxSpacingRatio: Double {

@@ -118,9 +118,9 @@ extension EnvConfig {
                 ("tapMinGapForOffset", "\(tapMinGapForOffset)"),
                 ("tapIconRowMinLabels", "\(tapIconRowMinLabels)"),
                 ("tapIconOffset", "\(tapIconOffset)"),
+                ("tapTabBarIconOffset", "\(tapTabBarIconOffset)"),
                 ("tapRowTolerance", "\(tapRowTolerance)"),
                 ("tapBottomZoneFraction", "\(tapBottomZoneFraction)"),
-                ("tapTabBarLabelLift", "\(tapTabBarLabelLift)"),
             ]),
             ("Safe Area", [
                 ("safeBottomMarginPt", "\(TimingConstants.safeBottomMarginPt)"),
@@ -147,13 +147,12 @@ extension EnvConfig {
                 ("settingsLoadUs", "\(settingsLoadUs)"),
             ]),
             ("App Switcher", [
-                ("appSwitcherCardOffset", "\(appSwitcherCardOffset)"),
-                ("appSwitcherCardXFraction", "\(appSwitcherCardXFraction)"),
                 ("appSwitcherCardYFraction", "\(appSwitcherCardYFraction)"),
                 ("appSwitcherSwipeDistance", "\(appSwitcherSwipeDistance)"),
                 ("appSwitcherSwipeDurationMs", "\(appSwitcherSwipeDurationMs)"),
                 ("appSwitcherMaxSwipes", "\(appSwitcherMaxSwipes)"),
                 ("toolSettlingDelayUs", "\(toolSettlingDelayUs)"),
+                ("networkChangeTimeoutUs", "\(networkChangeTimeoutUs)"),
             ]),
             ("Icon Detection", [
                 ("iconOcrProximityFilter", "\(iconOcrProximityFilter)"),

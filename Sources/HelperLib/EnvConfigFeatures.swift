@@ -46,14 +46,6 @@ extension EnvConfig {
         readUInt32("settingsLoadUs", default: TimingConstants.settingsLoadUs)
     }
 
-    public static var appSwitcherCardOffset: Double {
-        readDouble("appSwitcherCardOffset", default: TimingConstants.appSwitcherCardOffset)
-    }
-
-    public static var appSwitcherCardXFraction: Double {
-        readDouble("appSwitcherCardXFraction", default: TimingConstants.appSwitcherCardXFraction)
-    }
-
     public static var appSwitcherCardYFraction: Double {
         readDouble("appSwitcherCardYFraction", default: TimingConstants.appSwitcherCardYFraction)
     }
@@ -92,6 +84,10 @@ extension EnvConfig {
 
     public static var toolSettlingDelayUs: UInt32 {
         readUInt32("toolSettlingDelayUs", default: TimingConstants.toolSettlingDelayUs)
+    }
+
+    public static var networkChangeTimeoutUs: UInt32 {
+        readUInt32("networkChangeTimeoutUs", default: TimingConstants.networkChangeTimeoutUs)
     }
 
     // MARK: - Focus Recovery

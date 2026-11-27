@@ -14,7 +14,7 @@
  * the License.
  */
 // ABOUTME: Apple Vision framework backend for text recognition.
-// ABOUTME: Converts VNRecognizeTextRequest observations into RawTextElements in window-point space.
+// ABOUTME: Converts VNRecognizeTextRequest observations into RawTextElements in window-point space; a stuck process reads in a fresh one.
 
 import CoreGraphics
 import Foundation
@@ -26,78 +26,72 @@ import Vision
 /// window-point top-left origin, with content-bounds scaling applied.
 struct AppleVisionTextRecognizer: Sendable {
 
+    /// Reads `image` in a separate process when every in-process attempt has
+    /// failed. See `perform(on:)`.
+    var freshProcessReader: @Sendable (CGImage) throws -> [RecognizedTextLine] = FreshProcessTextReader.read
+
     func recognizeText(
         in image: CGImage,
         windowSize: CGSize,
         contentBounds: CGRect
     ) throws -> [RawTextElement] {
-        let observations = try perform(on: image)
+        let lines = try perform(on: image)
 
-        let windowWidth = Double(windowSize.width)
-        let windowHeight = Double(windowSize.height)
-
-        // The display backing scale is uniform (same for X and Y on macOS).
-        // Derive it from the X dimension, which is reliable — screencapture
-        // does not add extra horizontal content beyond the window bounds.
-        let backingScale = Double(image.width) / windowWidth
-
-        // Image dimensions in point space. imagePointHeight may exceed
-        // windowHeight when screencapture includes window chrome (rounded
-        // corners, home indicator area) beyond the AX-reported window size.
-        let imagePointHeight = Double(image.height) / backingScale
-
-        // Content-to-window scaling: only applied when ContentBoundsDetector
-        // found SIGNIFICANT dark borders (Larger display mode). Small
-        // differences (< 5% per axis) are ignored — they come from the
-        // phone's rounded corners and home indicator, not from display mode
-        // borders. In Larger mode the content is typically 10-20% smaller.
-        let widthMargin = Double(image.width) * 0.05
-        let heightMargin = Double(image.height) * 0.05
-        let bordersDetected = Double(contentBounds.width) < Double(image.width) - widthMargin
-            && Double(contentBounds.height) < Double(image.height) - heightMargin
-
-        let xScale: Double
-        let yScale: Double
-        if bordersDetected {
-            let contentWidth = Double(contentBounds.width) / backingScale
-            let contentHeight = Double(contentBounds.height) / backingScale
-            xScale = windowWidth / max(contentWidth, 1.0)
-            yScale = windowHeight / max(contentHeight, 1.0)
-        } else {
-            xScale = 1.0
-            yScale = 1.0
-        }
-
-        if bordersDetected {
-            DebugLog.log("OCR", "Larger-mode scaling: contentBounds=\(Int(contentBounds.width))x\(Int(contentBounds.height)) yScale=\(String(format: "%.3f", yScale))")
+        let mapping = WindowPointMapping(
+            imageWidth: image.width, imageHeight: image.height,
+            windowSize: windowSize, contentBounds: contentBounds)
+        if mapping.bordersDetected {
+            DebugLog.log("OCR", "Larger-mode scaling: contentBounds=\(Int(contentBounds.width))x\(Int(contentBounds.height)) yScale=\(String(format: "%.3f", mapping.yScale))")
         }
 
         // Convert Vision normalized coordinates (origin: bottom-left) to
         // tap-point coordinates (origin: top-left of mirroring window).
-        // Vision normalizes to the full image, so we convert through the
-        // actual image dimensions (imagePointHeight), not windowHeight.
-        return observations.compactMap { observation in
-            guard let candidate = observation.topCandidates(1).first else { return nil }
-            let bbox = observation.boundingBox
-            return RawTextElement(
-                text: candidate.string,
-                tapX: (bbox.midX * windowWidth) * xScale,
-                textTopY: ((1.0 - bbox.maxY) * imagePointHeight) * yScale,
-                textBottomY: ((1.0 - bbox.minY) * imagePointHeight) * yScale,
-                bboxWidth: bbox.width * windowWidth * xScale,
-                confidence: candidate.confidence
-            )
+        return lines.map { line in
+            mapping.element(text: line.text, bbox: line.boundingBox, confidence: line.confidence)
         }
     }
 
-    /// Run the Vision request, retrying once and then on the CPU before giving up.
+    /// Read `image`: in this process first, then in a fresh process.
     ///
     /// The first attempt can fail while the Neural Engine compiles its
     /// precompiled model — an `e5rtError` from that path takes the whole request
     /// down even though the same image succeeds moments later. A plain retry
     /// covers the transient case; pinning the compute device to the CPU covers a
     /// machine where that path stays broken, at the cost of speed.
-    private func perform(on image: CGImage) throws -> [VNRecognizedTextObservation] {
+    ///
+    /// None of that helps once the compiled model this process loaded has been
+    /// removed from its cache (`~/Library/Caches/<executable>/com.apple.e5rt.e5bundlecache`):
+    /// every request in the process then fails with the same `e5rtError` within
+    /// milliseconds, whatever the device or handler, while a new process reads
+    /// the same image normally (carnet#90, measured on macOS 27.2.1). A
+    /// long-running server would stay blind, so the last step reads the image
+    /// in a fresh process.
+    private func perform(on image: CGImage) throws -> [RecognizedTextLine] {
+        try Self.read(image, inProcess: inProcessLines(in:), freshProcess: freshProcessReader)
+    }
+
+    /// `inProcess(image)`, or `freshProcess(image)` when it throws. When both
+    /// throw, the in-process error is the one reported.
+    static func read(_ image: CGImage,
+                     inProcess: (CGImage) throws -> [RecognizedTextLine],
+                     freshProcess: (CGImage) throws -> [RecognizedTextLine]) throws -> [RecognizedTextLine] {
+        do {
+            return try inProcess(image)
+        } catch {
+            DebugLog.persist("OCR", "reading in a fresh process")
+            do {
+                return try freshProcess(image)
+            } catch let freshError {
+                DebugLog.persist("OCR", "fresh-process read failed (\(freshError))")
+                throw error
+            }
+        }
+    }
+
+    /// Read `image` in this process: an attempt, a retry, then on the CPU.
+    ///
+    /// - Throws: `TextRecognitionError.visionRequestFailed` when all three fail.
+    func inProcessLines(in image: CGImage) throws -> [RecognizedTextLine] {
         do {
             return try attempt(on: image, cpuOnly: false)
         } catch {
@@ -119,7 +113,7 @@ struct AppleVisionTextRecognizer: Sendable {
     }
 
     /// One Vision pass over `image`, optionally forced onto the CPU.
-    private func attempt(on image: CGImage, cpuOnly: Bool) throws -> [VNRecognizedTextObservation] {
+    private func attempt(on image: CGImage, cpuOnly: Bool) throws -> [RecognizedTextLine] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = EnvConfig.ocrRecognitionLevel == "fast" ? .fast : .accurate
         request.usesLanguageCorrection = EnvConfig.ocrLanguageCorrection
@@ -130,7 +124,11 @@ struct AppleVisionTextRecognizer: Sendable {
 
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try handler.perform([request])
-        return request.results ?? []
+        return (request.results ?? []).compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first else { return nil }
+            return RecognizedTextLine(text: candidate.string, boundingBox: observation.boundingBox,
+                                      confidence: candidate.confidence)
+        }
     }
 
     /// The configured `ocrLanguages`, or the Mac's preferred languages then
@@ -162,4 +160,13 @@ struct AppleVisionTextRecognizer: Sendable {
             }
         }
     }
+}
+
+/// One line of text Vision read: its string, its normalized bounding box
+/// (origin bottom-left, as Vision reports it) and its confidence. Codable so a
+/// fresh process can hand its lines back (`recognize-text`).
+struct RecognizedTextLine: Codable, Equatable, Sendable {
+    let text: String
+    let boundingBox: CGRect
+    let confidence: Float
 }

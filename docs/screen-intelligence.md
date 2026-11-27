@@ -6,7 +6,7 @@ The observe, reason, act loop, and the OCR, icon detection and AI vision backend
 
 Every interaction follows the same loop: **observe, reason, act**. `describe_screen` gives the AI every text element with tap coordinates (eyes). The LLM decides what to do next (brain). `tap`, `type_text`, `swipe` execute the action (hands) — then it loops back to observe. No scripts, no coordinates, just intent.
 
-Beyond the basics, the server exposes higher-level navigation and lifecycle tools: `press_back` navigates back by OCR-tapping the "<" chevron (with a canonical-position fallback), `press_home`/`press_app_switcher`/`spotlight` drive system gestures, `scroll_to` scrolls until a target text becomes visible, `reset_app` force-quits an app via the App Switcher, `set_network` toggles connectivity through Settings, and `measure` times how long an action takes to surface a target element. Multi-target setups use `list_targets`/`switch_target` to move between window automation endpoints. Skill authoring is served by `record_step` and `save_compiled` (compiled replay) and `calibrate_component` (test a component definition against the live screen). See the [Tools Reference](tools.md) for all 44 tools.
+Beyond the basics, the server exposes higher-level navigation and lifecycle tools: `press_back` navigates back by OCR-tapping the "<" chevron (with a canonical-position fallback), `press_home`/`press_app_switcher`/`spotlight` drive system gestures, `scroll_to` scrolls until a target text becomes visible, `reset_app` force-quits an app via the App Switcher, `set_network` toggles connectivity through Control Center or Settings, and `measure` times how long an action takes to surface a target element. Multi-target setups use `list_targets`/`switch_target` to move between window automation endpoints. Skill authoring is served by `record_step` and `save_compiled` (compiled replay) and `calibrate_component` (test a component definition against the live screen). See the [Tools Reference](tools.md) for all 44 tools.
 
 ## Screen Intelligence
 
@@ -57,16 +57,14 @@ swift build -c release
 brew reinstall mirroir-mcp
 ```
 
-#### Zero-config activation
+#### Activation
 
-When the embacle FFI is linked into the binary, `screenDescriberMode` defaults to `"auto"` which automatically resolves to vision mode. No settings change required — install embacle-ffi, rebuild, and `describe_screen` starts using AI vision.
-
-To force local OCR even when embacle is available, explicitly set `"ocr"`:
+Vision mode is opt-in. `screenDescriberMode` defaults to `"auto"`, which uses local OCR even when the embacle FFI is linked. Set `"vision"` to use AI vision:
 
 ```json
 // .mirroir-mcp/settings.json
 {
-  "screenDescriberMode": "ocr"
+  "screenDescriberMode": "vision"
 }
 ```
 

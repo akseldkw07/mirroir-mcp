@@ -8,7 +8,7 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 
-const VERSION = "0.50.3";
+const VERSION = "0.51.0";
 const REPO = "jfarcand/mirroir-mcp";
 const BINARY = "mirroir-mcp";
 
@@ -20,7 +20,15 @@ function main() {
     process.exit(1);
   }
 
-  const arch = process.arch === "arm64" ? "arm64" : "x86_64";
+  if (process.arch !== "arm64") {
+    console.error(
+      "mirroir-mcp ships a pre-built binary for Apple Silicon only. " +
+        "On an Intel Mac, build from source: https://github.com/jfarcand/mirroir-mcp/blob/main/docs/install.md"
+    );
+    process.exit(1);
+  }
+
+  const arch = "arm64";
   const tarball = `${BINARY}-darwin-${arch}.tar.gz`;
   const url = `https://github.com/${REPO}/releases/download/v${VERSION}/${tarball}`;
   const binDir = path.join(__dirname, "bin");

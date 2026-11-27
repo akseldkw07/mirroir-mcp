@@ -127,23 +127,22 @@ public enum TimingConstants {
     /// Fixed upward offset applied to short labels when a gap is detected.
     public static let tapIconOffset: Double = 30.0
 
+    /// Upward offset from a tab-bar label's top to its icon, in points of a 410-point-wide
+    /// window, scaled with the window's width. Smaller than `tapIconOffset`: a floating
+    /// tab bar (iOS 26 and later) ends about 30 points above its labels, so the
+    /// home-screen offset tapped above the bar (carnet#104).
+    public static let tapTabBarIconOffset: Double = 22.0
+
+    /// The window width `tapTabBarIconOffset` is measured in.
+    public static let tapReferenceWindowWidth: Double = 410.0
+
     /// Elements within this vertical distance are treated as the same row.
     public static let tapRowTolerance: Double = 10.0
 
     /// Fraction of window height defining the bottom zone.
-    /// Icon rows in this zone are tab bars: their labels always get the
-    /// `tapTabBarLabelLift` tap point, regardless of gap, because content can
-    /// sit close above the tab labels.
+    /// Icon rows in this zone always get the upward tap offset, regardless of gap,
+    /// to handle in-app tab bars where content sits close above the tab labels.
     public static let tapBottomZoneFraction: Double = 0.90
-
-    /// How far above its label's top a tab bar item is tapped, in heights of
-    /// that label: tab icons sit about one label height above their label.
-    /// Measured 2026-11-10 in Clock on iOS 26 (window 292x645): labels 10 pt
-    /// tall with tops at 608, icons at 590-605, the glass bar from 578 to 623,
-    /// so the fixed 30 pt `tapIconOffset` landed on the bar's edge and missed.
-    /// Scaling with the label keeps the tap inside both the floating glass bar
-    /// and the classic full-width bar.
-    public static let tapTabBarLabelLift: Double = 1.0
 
     /// Maximum allowed `maxSpacing / minSpacing` ratio between adjacent
     /// elements in a row before it is rejected as an icon-grid row.
@@ -207,19 +206,6 @@ public enum TimingConstants {
     /// Delay for Settings app to load (microseconds).
     public static let settingsLoadUs: UInt32 = 1_500_000
 
-    /// Vertical offset from the app name label to the card body center in the App Switcher (points).
-    /// OCR detects the label above the card preview; this offset moves the swipe start point
-    /// down into the card so the dismiss gesture registers reliably.
-    public static let appSwitcherCardOffset: Double = 250.0
-
-    /// Horizontal position of the current app card in the App Switcher, as a fraction
-    /// of window width. Empirically tuned — in the iPhone Mirroring window, after
-    /// Spotlight-launching an app then opening App Switcher, the just-launched
-    /// card sits at ~75% from the left edge, not visually centered. Do not
-    /// "correct" this to 0.5 without testing on a real device — value was
-    /// reverted from 0.5 → 0.75 after a regression closed the wrong app.
-    public static let appSwitcherCardXFraction: Double = 0.75
-
     /// Vertical position for the drag start point in the App Switcher, as a fraction
     /// of window height. Targets the middle of the card body.
     public static let appSwitcherCardYFraction: Double = 0.55
@@ -276,6 +262,11 @@ public enum TimingConstants {
 
     /// UI settling delay after App Switcher or network toggle operations (microseconds).
     public static let toolSettlingDelayUs: UInt32 = 500_000
+
+    /// Longest wait after a network tile or switch tap for it to read the
+    /// asked state (microseconds). Cellular reads its new state at once; Wi-Fi
+    /// first disconnects, and its tile shows the network name a moment longer.
+    public static let networkChangeTimeoutUs: UInt32 = 5_000_000
 
     // MARK: - Focus Recovery
 

@@ -70,10 +70,14 @@ public struct TapPoint: Sendable, Codable, Equatable {
     /// Where the text came from. In a saved file the key is written only for
     /// text that did not come from pixels, and absent means pixels.
     public let source: TextSource
+    /// The text's width in window points, when the recognizer measured it
+    /// (OCR does; a vision model does not). Not written to saved files.
+    public let width: Double?
 
     public init(text: String, tapX: Double, tapY: Double, confidence: Float, pageY: Double? = nil,
-                source: TextSource = .pixels) {
+                source: TextSource = .pixels, width: Double? = nil) {
         self.text = text
+        self.width = width
         self.tapX = tapX
         self.tapY = tapY
         self.pageY = pageY ?? tapY
@@ -93,6 +97,7 @@ public struct TapPoint: Sendable, Codable, Equatable {
         pageY = try container.decode(Double.self, forKey: .pageY)
         confidence = try container.decode(Float.self, forKey: .confidence)
         source = try container.decodeIfPresent(TextSource.self, forKey: .source) ?? .pixels
+        width = nil
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -132,11 +137,6 @@ public enum TapPointCalculator {
     /// Matches the typical distance from an icon label to the icon center
     /// on iOS home screens (~30pt).
     static var iconOffset: Double { EnvConfig.tapIconOffset }
-    /// How far above its label's top a tab bar item is tapped, in heights of
-    /// that label. Tab icons sit closer to their labels than home screen icons
-    /// do, and the iOS 26 glass bar floats with a gap around it, so the fixed
-    /// ``iconOffset`` would tap above the bar.
-    static var tabBarLabelLift: Double { EnvConfig.tapTabBarLabelLift }
     /// Elements within this vertical distance are treated as the same row.
     /// Ensures all labels in an icon row get the same gap calculation.
     static var rowTolerance: Double { EnvConfig.tapRowTolerance }
@@ -165,8 +165,11 @@ public enum TapPointCalculator {
         /// Vertical gap from the bottom of the reference row above.
         public let gap: Double
         /// Whether this icon row is in the bottom zone of the window (e.g. tab bar).
-        /// When true, the upward offset is applied regardless of gap size.
+        /// When true, the tab-bar offset is applied regardless of gap size.
         public let isInBottomZone: Bool
+        /// The upward offset of a bottom-zone row: `tapTabBarIconOffset` scaled to the
+        /// window's width.
+        public var tabBarOffset: Double = EnvConfig.tapTabBarIconOffset
     }
 
     // MARK: - Stage 1: Group into rows
@@ -218,9 +221,13 @@ public enum TapPointCalculator {
                     && $0.bboxWidth < windowWidth * maxLabelWidthFraction
             }.count
             let allShortLabels = shortLabelsInRow == row.elements.count
+            // A tab bar may hold a button with no label (TikTok's "+"): its labels then
+            // keep one spacing with a double gap where that button sits (carnet#105).
+            let spaced = hasUniformSpacing(row.elements)
+                || (rowTopY >= bottomZoneY && hasTabBarSpacing(row.elements))
             let isIconRow = allShortLabels
                 && shortLabelsInRow >= iconRowMinLabels
-                && hasUniformSpacing(row.elements)
+                && spaced
 
             let gap: Double
             if isIconRow {
@@ -233,7 +240,9 @@ public enum TapPointCalculator {
 
             classified.append(ClassifiedRow(
                 row: row, isIconRow: isIconRow, gap: gap,
-                isInBottomZone: isInBottomZone
+                isInBottomZone: isInBottomZone,
+                tabBarOffset: EnvConfig.tapTabBarIconOffset
+                    * windowWidth / TimingConstants.tapReferenceWindowWidth
             ))
 
             previousRowBottomY = max(previousRowBottomY, row.bottomY)
@@ -271,11 +280,24 @@ public enum TapPointCalculator {
         return maxGap / minGap <= iconRowMaxSpacingRatio
     }
 
+    /// Returns true when every gap between adjacent label centres is one or two times
+    /// the smallest, within 15%: an evenly spaced tab bar whose labels skip one button
+    /// that has none. An in-content toolbar's gaps are no such multiples.
+    public static func hasTabBarSpacing(_ elements: [RawTextElement]) -> Bool {
+        let xs = elements.map(\.tapX).sorted()
+        guard xs.count >= 3 else { return true }
+        let spacings = zip(xs.dropFirst(), xs).map { $0 - $1 }
+        guard let unit = spacings.min(), unit > 0 else { return false }
+        return spacings.allSatisfy { spacing in
+            let multiple = (spacing / unit).rounded()
+            return (1...2).contains(multiple) && abs(spacing - multiple * unit) <= unit * 0.15
+        }
+    }
+
     // MARK: - Stage 3: Apply offsets
 
-    /// Converts classified rows into final tap points: tab bar labels are lifted
-    /// by their own height toward their icon, other icon rows with a sufficient
-    /// gap above by the fixed ``iconOffset``.
+    /// Converts classified rows into final tap points by applying the upward
+    /// offset to icon rows with a sufficient gap above.
     public static func applyOffsets(_ classifiedRows: [ClassifiedRow]) -> [TapPoint] {
         var results: [TapPoint] = []
 
@@ -283,9 +305,9 @@ public enum TapPointCalculator {
             for element in classified.row.elements {
                 let tapY: Double
                 let textCenterY = (element.textTopY + element.textBottomY) / 2.0
-                if classified.isInBottomZone {
-                    let labelHeight = element.textBottomY - element.textTopY
-                    tapY = max(element.textTopY - labelHeight * tabBarLabelLift, 0.0)
+                if classified.isIconRow && classified.isInBottomZone {
+                    // A tab bar: the icon sits just above its label, inside the bar.
+                    tapY = max(element.textTopY - classified.tabBarOffset, 0.0)
                 } else if classified.isIconRow && classified.gap > minGapForOffset {
                     tapY = max(element.textTopY - iconOffset, 0.0)
                 } else {
@@ -296,7 +318,8 @@ public enum TapPointCalculator {
                     text: element.text,
                     tapX: element.tapX,
                     tapY: tapY,
-                    confidence: element.confidence
+                    confidence: element.confidence,
+                    width: element.bboxWidth
                 ))
             }
         }

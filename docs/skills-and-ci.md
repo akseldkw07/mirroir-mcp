@@ -9,6 +9,7 @@ mirroir can explore any iOS app blindly, but it works better when you tell it wh
 ```markdown
 ---
 app: Santé
+version: 1
 archetype: dashboard
 obstacle_mode: auto
 ---
@@ -178,7 +179,7 @@ mirroir test --dry-run apps/settings/check-about    # validate without executing
 | `--no-compiled` | Skip compiled skills, force full OCR |
 | `--agent <name>` | AI diagnosis of a failed step (see [AI-Assisted Diagnosis](skills-and-ci.md#ai-assisted-diagnosis)) |
 
-Exit code `0` = all pass, `1` = any failure, `2` = refused arguments (an unknown option is named, never ignored). A skill whose every step was skipped is a failure, and a skill holding a step the parser cannot read (an unknown verb, a malformed `target:`) or cannot use (a `drag:` naming neither end, a `measure:` with no action) is refused before anything runs, `--dry-run` included. A skill holding an AI-only step (`verify`, `remember`, `condition`, `repeat`, `summarize`) fails with `not evaluated: <step> needs an AI client`: the CLI has no AI to check it, so it never reports that skill as passed.
+Exit code `0` = all pass, `1` = any failure, `2` = refused arguments (an unknown option is named, never ignored). A skill whose every step was skipped is a failure, and a skill holding a step the parser cannot read (an unknown verb, a malformed `target:`) or cannot use (a `drag:` naming neither end, a `measure:` with no action) is refused before anything runs, `--dry-run` included. A skill holding an AI-only step (`verify`, `remember`, `summarize`, or a `condition`/`repeat` other than the one-line form `condition: visible "X" -> tap: X` / `repeat: until visible "X", max 8 -> swipe: up`) fails with `not evaluated: <step> needs an AI client`: the CLI has no AI to check it, so it never reports that skill as passed.
 
 `mirroir test` only reads `.compiled.json` files, never rewrites them; it writes one only to the path `--compiled-out` names. A compiled file stale for its source, format version or window size is named and the skill runs on live OCR.
 
@@ -275,7 +276,7 @@ mirroir test --agent embacle my-skill
 
 The explorer uses a three-layer pattern system to understand iOS apps — the same declarative concept at different scales:
 
-- **Element patterns** (`patterns/elements/`) — 34 definitions matching row-level UI components (table rows, tab bars, toggles, summary cards). Each specifies match rules, interaction behavior, and grouping logic.
+- **Element patterns** (`patterns/elements/`) — 33 definitions matching row-level UI components (table rows, tab bars, toggles, summary cards). Each specifies match rules, interaction behavior, and grouping logic.
 - **Screen patterns** (`patterns/screens/`) — 7 archetype recipes that identify screen-level navigation models from element composition. Auto-detected during calibration, or declared via `archetype` in APP.md.
 - **App patterns** (`patterns/apps/`) — APP.md files with structure, obstacles, skip lists, and archetype declarations. The developer's source of truth.
 

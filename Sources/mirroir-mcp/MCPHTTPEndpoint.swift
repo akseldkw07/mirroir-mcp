@@ -97,72 +97,161 @@ enum MCPHTTPEndpoint {
     }
 
     /// Answer one HTTP request. `dispatch` is called at most once, and only for
-    /// a request that passed every check; it returns nil for a notification.
+    /// a request that passed every check, with the control its call runs
+    /// under; it returns nil for a notification.
+    ///
+    /// The client leaving cancels the call: on this transport a closed
+    /// connection is the cancellation. A `tools/call` whose client asked for
+    /// progress (`_meta.progressToken`) and accepts `text/event-stream` gets
+    /// its progress as events, then its response as the last event. Every
+    /// other reply is one JSON body, which keeps its status: a stream, once
+    /// open, can only be 200.
     static func respond(
-        to request: HTTPRequest, config: Config,
-        dispatch: (JSONRPCRequest) -> JSONRPCResponse?
-    ) -> HTTPResponse {
-        if let refusal = refusalBeforeBody(request, config: config) { return refusal }
+        to request: HTTPRequest, config: Config, channel: any HTTPExchangeChannel,
+        dispatch: (JSONRPCRequest, MCPCallControl) -> JSONRPCResponse?
+    ) -> HTTPReply {
+        switch check(request, config: config) {
+        case .failure(let refusal):
+            return .whole(refusal.response)
+        case .success(let checked):
+            return reply(to: checked, channel: channel, dispatch: dispatch)
+        }
+    }
+
+    /// A request that passed every check, and whether it speaks the stateless revision.
+    struct CheckedRequest {
+        let http: HTTPRequest
+        let rpc: JSONRPCRequest
+        let modern: Bool
+    }
+
+    /// The HTTP answer that ends a request before it is dispatched.
+    struct Refusal: Error {
+        let response: HTTPResponse
+    }
+
+    private static func reply(
+        to checked: CheckedRequest, channel: any HTTPExchangeChannel,
+        dispatch: (JSONRPCRequest, MCPCallControl) -> JSONRPCResponse?
+    ) -> HTTPReply {
+        let rpc = checked.rpc
+        let streams = StreamedFlag()
+        let wantsProgress = rpc.method == "tools/call"
+            && SSEFrame.allowsEventStream(accept: checked.http.headers["accept"])
+        let call = MCPCallControl(
+            progressToken: wantsProgress ? ProgressNotification.token(in: rpc.params) : nil,
+            emit: { params in
+                streams.set()
+                channel.sendEvent(notification(method: ProgressNotification.method, params: params))
+            })
+        channel.onAbandon { call.cancel(reason: "the client closed the connection") }
+
+        let response = dispatch(rpc, call)
+        // A cancelled call gets no answer: its client has gone.
+        guard call.finish() else { return .whole(HTTPResponse(status: 202)) }
+        guard let response else { return .whole(HTTPResponse(status: 202)) }
+        guard streams.isSet else {
+            return .whole(encoded(response, status: status(for: response, rpc: rpc, modern: checked.modern)))
+        }
+        guard let body = try? JSONEncoder().encode(response) else {
+            DebugLog.log("serve", "Failed to encode the final response of a stream")
+            return .streamEnded
+        }
+        channel.sendEvent(body)
+        return .streamEnded
+    }
+
+    /// Whether a reply has started streaming; set from the call's progress.
+    private final class StreamedFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        var isSet: Bool { lock.withLock { value } }
+        func set() { lock.withLock { value = true } }
+    }
+
+    /// A notification as one line of JSON.
+    private static func notification(method: String, params: JSONValue) -> Data {
+        let message: JSONValue = .object([
+            "jsonrpc": .string("2.0"), "method": .string(method), "params": params,
+        ])
+        return (try? JSONEncoder().encode(message)) ?? Data()
+    }
+
+    /// Every check a request passes before it is dispatched, in order.
+    static func check(_ request: HTTPRequest, config: Config) -> Result<CheckedRequest, Refusal> {
+        if let refusal = refusalBeforeBody(request, config: config) { return refused(refusal) }
         guard nestingDepth(of: request.body) <= maxNestingDepth else {
-            return rpcError(400, code: ErrorCode.invalidRequest,
-                            message: "Invalid request: nested deeper than \(maxNestingDepth) levels")
+            return refused(rpcError(400, code: ErrorCode.invalidRequest,
+                            message: "Invalid request: nested deeper than \(maxNestingDepth) levels"))
         }
 
         let parsed: Any
         do {
             parsed = try JSONSerialization.jsonObject(with: request.body, options: [.fragmentsAllowed])
         } catch {
-            return rpcError(400, code: ErrorCode.parseError, message: "Parse error: the body is not JSON")
+            return refused(rpcError(400, code: ErrorCode.parseError, message: "Parse error: the body is not JSON"))
         }
         guard let object = parsed as? [String: Any] else {
-            return rpcError(400, code: ErrorCode.invalidRequest,
-                            message: "Invalid request: send one JSON-RPC object per POST, not a batch")
+            return refused(rpcError(400, code: ErrorCode.invalidRequest,
+                            message: "Invalid request: send one JSON-RPC object per POST, not a batch"))
         }
         // A client's answer to a server request. This server sends none over
         // HTTP, so there is nothing to match it with.
-        guard object["method"] != nil else { return HTTPResponse(status: 202) }
+        guard object["method"] != nil else { return refused(HTTPResponse(status: 202)) }
 
         let rpc: JSONRPCRequest
         do {
             rpc = try JSONDecoder().decode(JSONRPCRequest.self, from: request.body)
         } catch {
-            return rpcError(400, code: ErrorCode.invalidRequest,
-                            message: "Invalid request: \(error.localizedDescription)")
+            return refused(rpcError(400, code: ErrorCode.invalidRequest,
+                            message: "Invalid request: \(error.localizedDescription)"))
         }
 
         let modernVersion = rpc.params?.member("_meta")?
             .member(MCPServer.MetaKey.protocolVersion)?.asString()
         if let mismatch = headerMismatch(request, rpc: rpc, modernVersion: modernVersion) {
-            return rpcError(400, code: ErrorCode.headerMismatch, message: mismatch, id: rpc.id)
+            return refused(rpcError(400, code: ErrorCode.headerMismatch, message: mismatch, id: rpc.id))
+        }
+        // An `initialize`-era request may send the version header; a version
+        // not served here gets the list a client can retry with.
+        if modernVersion == nil, let versionHeader = request.headers[Header.protocolVersion],
+           !MCPServer.supportedProtocolVersions.contains(versionHeader) {
+            return refused(encoded(MCPServer.unsupportedVersionError(id: rpc.id, requested: versionHeader), status: 400))
         }
 
-        guard let response = dispatch(rpc) else { return HTTPResponse(status: 202) }
-        let body: Data
+        return .success(CheckedRequest(http: request, rpc: rpc, modern: modernVersion != nil))
+    }
+
+    private static func refused(_ response: HTTPResponse) -> Result<CheckedRequest, Refusal> {
+        .failure(Refusal(response: response))
+    }
+
+    /// A JSON-RPC response as an HTTP response with `status`.
+    private static func encoded(_ response: JSONRPCResponse, status: Int) -> HTTPResponse {
         do {
-            body = try JSONEncoder().encode(response)
+            return .json(status, try JSONEncoder().encode(response))
         } catch {
             DebugLog.log("serve", "Failed to encode response: \(error)")
             return rpcError(500, code: ErrorCode.internalError, message: "Internal error: response encoding failed",
-                            id: rpc.id)
+                            id: response.id)
         }
-        return .json(status(for: response, modern: modernVersion != nil), body)
     }
 
     /// The reason a request's MCP headers are refused, or nil when they agree
     /// with its body. A stateless-era request must repeat its version, its
     /// method and, for a tool call, the tool's name in headers, so a proxy can
-    /// route without reading the body. An `initialize`-era request may send
-    /// the version header; when it does, the version must be one served here.
+    /// route without reading the body. Every MCP header must hold only what a
+    /// header value may: visible ASCII, space and tab.
     static func headerMismatch(
         _ request: HTTPRequest, rpc: JSONRPCRequest, modernVersion: String?
     ) -> String? {
-        let versionHeader = request.headers[Header.protocolVersion]
-        guard let modernVersion else {
-            if let versionHeader, !MCPServer.supportedProtocolVersions.contains(versionHeader) {
-                return "MCP-Protocol-Version '\(versionHeader)' is not supported"
+        for header in [Header.protocolVersion, Header.method, Header.name] {
+            if let value = request.headers[header], !isValidHeaderValue(value) {
+                return "\(header) holds characters a header value may not: encode it as \(base64Prefix)…\(base64Suffix)"
             }
-            return nil
         }
+        let versionHeader = request.headers[Header.protocolVersion]
+        guard let modernVersion else { return nil }
         guard versionHeader == modernVersion else {
             return "MCP-Protocol-Version must be '\(modernVersion)', the version in _meta"
         }
@@ -175,6 +264,15 @@ enum MCPHTTPEndpoint {
             }
         }
         return nil
+    }
+
+    /// Whether `value` holds only visible ASCII (0x21-0x7E), space and tab,
+    /// the characters an HTTP header value may carry. Anything else travels in
+    /// the Base64 form.
+    static func isValidHeaderValue(_ value: String) -> Bool {
+        value.unicodeScalars.allSatisfy { scalar in
+            scalar == " " || scalar == "\t" || (0x21...0x7E).contains(scalar.value)
+        }
     }
 
     /// A header value with the Base64 form decoded; any other value unchanged.
@@ -223,10 +321,15 @@ enum MCPHTTPEndpoint {
 
     /// The HTTP status of a JSON-RPC response: errors a client must tell apart
     /// before parsing the body get their own status, everything else is 200.
-    private static func status(for response: JSONRPCResponse, modern: Bool) -> Int {
+    /// A stateless-era request missing a required `_meta` field is malformed,
+    /// and one needing a capability the client did not declare cannot run:
+    /// the revision makes both 400.
+    private static func status(for response: JSONRPCResponse, rpc: JSONRPCRequest, modern: Bool) -> Int {
         guard let code = response.error?.code else { return 200 }
         switch code {
-        case MCPServer.unsupportedProtocolVersionCode:
+        case MCPServer.unsupportedProtocolVersionCode, MCPServer.missingClientCapabilityCode:
+            return 400
+        case MCPServer.invalidParamsCode where modern && MCPServer.missingRequiredMetaField(rpc) != nil:
             return 400
         case ErrorCode.methodNotFound where modern:
             return 404

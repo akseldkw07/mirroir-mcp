@@ -25,8 +25,6 @@ import os
 final class MCPServer: Sendable {
     private let tools = OSAllocatedUnfairLock(initialState: [String: MCPToolDefinition]())
     private let sequenceAdvisor = RepeatedSequenceAdvisor()
-    private let encoder: JSONEncoder
-    private let decoder: JSONDecoder
     private let policy: PermissionPolicy
     /// Reads the screen of the target a tool call names, for the driving check
     /// (`DrivingGuard`) in front of every input. Nil until tools are registered.
@@ -34,20 +32,21 @@ final class MCPServer: Sendable {
         initialState: (@Sendable ([String: JSONValue]) -> ScreenDescriber.DescribeResult?)?.none)
     /// Counter for server-initiated request IDs (sampling, etc.).
     let requestCounter = OSAllocatedUnfairLock(initialState: 0)
-    /// Capabilities the client declared in its `initialize` handshake, which
-    /// tell us which server-initiated requests it can answer.
-    let clientCapabilities = OSAllocatedUnfairLock(initialState: JSONValue?.none)
-    /// Whether the request being served right now came from a stateless-era
-    /// client. The run loop serves one request at a time, so this describes the
-    /// request a tool handler is running under.
-    let servingModernRequest = OSAllocatedUnfairLock(initialState: false)
+    /// Capabilities the stdio client declared in its `initialize` handshake.
+    /// Only stdio keeps them: its process serves one client for its whole
+    /// life. Over HTTP there is no session to keep them in.
+    let handshakeCapabilities = OSAllocatedUnfairLock(initialState: JSONValue?.none)
+    /// The revision and declared capabilities of the request being served.
+    /// Both transports serve one request at a time, so this describes the
+    /// request a tool handler is running under, and no other.
+    let currentScope = OSAllocatedUnfairLock(initialState: RequestScope.none)
     /// How requests reach this server, which decides whether it may send its own.
     let transport: MCPTransport
+    /// The stdio connection while `run(input:output:)` serves it; nil over HTTP.
+    let stdioSession = OSAllocatedUnfairLock(initialState: StdioSession?.none)
     init(policy: PermissionPolicy, transport: MCPTransport) {
         self.policy = policy
         self.transport = transport
-        encoder = JSONEncoder()
-        decoder = JSONDecoder()
     }
 
     func registerTool(_ tool: MCPToolDefinition) {
@@ -57,34 +56,6 @@ final class MCPServer: Sendable {
     /// Set how the driving check reads the screen of the target a call names.
     func setScreenReader(_ reader: @escaping @Sendable ([String: JSONValue]) -> ScreenDescriber.DescribeResult?) {
         screenReader.withLock { $0 = reader }
-    }
-
-    /// Run the MCP server, reading JSON-RPC from stdin and writing to stdout.
-    func run() {
-        // Use line-delimited JSON (one JSON object per line)
-        while true {
-            guard let line = readLine(strippingNewline: true) else { break }
-            if line.isEmpty { continue }
-
-            guard let data = line.data(using: .utf8) else {
-                writeError(id: nil, code: -32700, message: "Parse error: invalid UTF-8")
-                continue
-            }
-
-            let request: JSONRPCRequest
-            do {
-                request = try decoder.decode(JSONRPCRequest.self, from: data)
-            } catch {
-                DebugLog.log("MCPServer", "JSON-RPC decode failed: \(error)")
-                writeError(id: nil, code: -32700, message: "Parse error: \(error.localizedDescription)")
-                continue
-            }
-
-            guard let response = handleRequest(request) else {
-                continue  // Notifications produce no response per JSON-RPC 2.0
-            }
-            writeResponse(response)
-        }
     }
 
     /// Revisions that negotiate statelessly, carrying the protocol version in
@@ -131,10 +102,18 @@ final class MCPServer: Sendable {
     /// to use; measured on the iPhone, it never loaded run_steps by itself.
     static let alwaysLoadedTools: Set<String> = ["run_steps"]
 
+    /// A tool's display name: its words capitalized, `describe_screen` as
+    /// "Describe Screen". Derived from the name, so the two never disagree.
+    static func title(for name: String) -> String {
+        name.split(separator: "_").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+    }
+
     /// The `_meta` key Claude Code (2.1.285 and later) reads on a tools/list entry.
     static let alwaysLoadKey = "anthropic/alwaysLoad"
 
-    func handleRequest(_ request: JSONRPCRequest) -> JSONRPCResponse? {
+    /// Serve one request. `call` carries a tool call's cancellation and
+    /// progress from the transport that received it.
+    func handleRequest(_ request: JSONRPCRequest, call: MCPCallControl = MCPCallControl()) -> JSONRPCResponse? {
         // Notifications have no id — the spec says receivers MUST NOT respond
         if request.id == nil {
             return nil
@@ -159,30 +138,22 @@ final class MCPServer: Sendable {
             // negotiation at a revision that cannot do it. The error names the
             // revisions that can, and the legacy ones it can fall back to.
             if !Self.modernProtocolVersions.contains(requested) {
-                return unsupportedVersionError(id: request.id, requested: requested)
+                return Self.unsupportedVersionError(id: request.id, requested: requested)
             }
-            if let missing = missingRequiredMetaField(request) {
+            if let missing = Self.missingRequiredMetaField(request) {
                 return JSONRPCResponse(
                     id: request.id, result: nil,
                     error: JSONRPCError(
-                        code: -32602,
+                        code: Self.invalidParamsCode,
                         message: "Invalid params: missing required _meta field '\(missing)'"
                     )
                 )
             }
         }
 
-        // Tool handlers consult this to know whether server-initiated requests
-        // are permitted while this request is in flight.
-        servingModernRequest.withLock { $0 = isModern }
-
-        // The stateless revision has no handshake to record capabilities from —
-        // every request carries them instead, so they are read here rather than
-        // in `initialize`.
-        if isModern, let declared = request.params?.member("_meta")?
-            .member(MetaKey.clientCapabilities) {
-            clientCapabilities.withLock { $0 = declared }
-        }
+        // Tool handlers read the revision and capabilities of this request, and
+        // of no other, from here.
+        currentScope.withLock { $0 = scope(for: request, modern: isModern) }
 
         switch request.method {
         case "initialize":
@@ -190,7 +161,7 @@ final class MCPServer: Sendable {
         case "tools/list":
             return handleToolsList(request, modern: isModern)
         case "tools/call":
-            return handleToolsCall(request, modern: isModern)
+            return handleToolsCall(request, modern: isModern, call: call)
         case "ping":
             return JSONRPCResponse(id: request.id, result: completeResult([:], modern: isModern), error: nil)
         default:
@@ -239,14 +210,14 @@ final class MCPServer: Sendable {
     /// The revision requires only `protocolVersion` (already established by the
     /// time this runs) and `clientCapabilities` — `clientInfo` is optional, so
     /// rejecting a request that omits it would turn away conformant clients.
-    private func missingRequiredMetaField(_ request: JSONRPCRequest) -> String? {
+    static func missingRequiredMetaField(_ request: JSONRPCRequest) -> String? {
         let meta = request.params?.member("_meta")
         if meta?.member(MetaKey.clientCapabilities) == nil { return MetaKey.clientCapabilities }
         return nil
     }
 
     /// `UnsupportedProtocolVersionError` with the versions we support.
-    private func unsupportedVersionError(id: RequestID?, requested: String) -> JSONRPCResponse {
+    static func unsupportedVersionError(id: RequestID?, requested: String) -> JSONRPCResponse {
         let supported = Self.supportedProtocolVersions.map { JSONValue.string($0) }
         let data: JSONValue = .object([
             "supported": .array(supported),
@@ -266,6 +237,14 @@ final class MCPServer: Sendable {
     /// across implementations and a client cannot recognise the version
     /// mismatch it signals.
     static let unsupportedProtocolVersionCode = -32022
+
+    /// Spec-allocated code for `MissingRequiredClientCapabilityError`: the
+    /// request needs a capability the client did not declare.
+    static let missingClientCapabilityCode = -32021
+
+    /// JSON-RPC `Invalid params`, which the revision also uses for a request
+    /// missing a required `_meta` field.
+    static let invalidParamsCode = -32602
 
     /// Modern `server/discover` — advertise supported versions, capabilities,
     /// and identity so a client can pick a version without a round-trip error.
@@ -304,7 +283,7 @@ final class MCPServer: Sendable {
 
         // Remember what the client can do — sampling is a client capability,
         // and we may only ask for it if the client offered it.
-        clientCapabilities.withLock { $0 = request.params?.member("capabilities") }
+        recordHandshake(request.params?.member("capabilities"))
 
         let result: JSONValue = .object([
             "protocolVersion": .string(negotiatedVersion),
@@ -324,11 +303,14 @@ final class MCPServer: Sendable {
 
     private func handleToolsList(_ request: JSONRPCRequest, modern: Bool) -> JSONRPCResponse {
         let toolList: [JSONValue] = tools.withLock { snapshot in
+            // Sorted by name, so every call lists the tools in the same order.
             snapshot.values
                 .filter { policy.isToolVisible($0.name) }
+                .sorted { $0.name < $1.name }
                 .map { tool in
                     var entry: [String: JSONValue] = [
                         "name": .string(tool.name),
+                        "title": .string(Self.title(for: tool.name)),
                         "description": .string(tool.description),
                         "inputSchema": .object(tool.inputSchema),
                         "annotations": .object(PermissionPolicy.annotations(for: tool.name)),
@@ -349,7 +331,7 @@ final class MCPServer: Sendable {
         return JSONRPCResponse(id: request.id, result: result, error: nil)
     }
 
-    private func handleToolsCall(_ request: JSONRPCRequest, modern: Bool) -> JSONRPCResponse {
+    private func handleToolsCall(_ request: JSONRPCRequest, modern: Bool, call: MCPCallControl) -> JSONRPCResponse {
         // A focus restore (restoreFocus) waits until no tool call is running.
         ToolCallActivity.shared.begin()
         defer { ToolCallActivity.shared.end() }
@@ -394,10 +376,14 @@ final class MCPServer: Sendable {
         }
         let context = MCPToolCallContext(
             inputResponses: Self.inputResponses(in: request),
-            requestState: Self.requestState(in: request))
+            requestState: Self.requestState(in: request),
+            call: call)
         // Synthetic input does not reset the idle timer: keep the screen saver off the mirror.
         let toolResult = DisplayAwake.shared.during("mirroir-mcp \(toolName)") { tool.handler(arguments, context) }
 
+        if let required = toolResult.missingClientCapabilities {
+            return missingCapabilityResponse(request, toolResult: toolResult, required: required, modern: modern)
+        }
         if !toolResult.inputRequests.isEmpty || toolResult.requestState != nil {
             return inputRequiredResponse(request, toolResult: toolResult, modern: modern)
         }
@@ -416,34 +402,4 @@ final class MCPServer: Sendable {
         return JSONRPCResponse(id: request.id, result: result, error: nil)
     }
 
-
-
-    private func writeResponse(_ response: JSONRPCResponse) {
-        let data: Data
-        do {
-            data = try encoder.encode(response)
-        } catch {
-            DebugLog.log("MCPServer", "Failed to encode response: \(error)")
-            // Send a minimal error response as a fallback
-            let fallback = #"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal error: response encoding failed"}}"#
-            print(fallback)
-            fflush(stdout)
-            return
-        }
-        guard let jsonString = String(data: data, encoding: .utf8) else {
-            DebugLog.log("MCPServer", "Response data is not valid UTF-8")
-            return
-        }
-        print(jsonString)
-        fflush(stdout)
-    }
-
-    private func writeError(id: RequestID?, code: Int, message: String) {
-        let response = JSONRPCResponse(
-            id: id,
-            result: nil,
-            error: JSONRPCError(code: code, message: message)
-        )
-        writeResponse(response)
-    }
 }

@@ -23,7 +23,7 @@ Env-var names are derived from the camelCase key by inserting `_` before every u
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `screenDescriberMode` | `"auto"` | `"auto"` uses vision when embacle FFI is linked, OCR otherwise. `"vision"` forces AI vision, `"ocr"` forces local OCR + YOLO |
+| `screenDescriberMode` | `"auto"` | `"auto"` and `"ocr"` use local OCR + YOLO. `"vision"` uses AI vision through the configured `agent` (`embacle` when none is set) |
 | `agent` | `""` | AI agent name for vision mode and diagnosis (e.g. `"embacle"`, `"embacle:claude"`) |
 | `agentTransport` | `"auto"` | Agent transport: `"auto"` runs an `embacle` agent whose model is a bare Copilot model id on the embedded Rust FFI when it is linked, HTTP otherwise. A `runner:model` embacle model (e.g. `embacle:claude` → `claude:sonnet`), a bare embacle-server runner name (`claude`, `copilot`, `gemini`, …, meaning that runner's default model) and every Anthropic, OpenAI and Ollama agent always use HTTP. `"http"` forces HTTP for everything |
 | `visionImageWidth` | `500` | Target image width in pixels for vision API calls (screenshots are resized before sending) |
@@ -47,6 +47,7 @@ Env-var names are derived from the camelCase key by inserting `_` before every u
 | `pasteVerifyTimeoutUs` | `2000000` | Longest wait after Cmd+V for a pasted run to appear on screen; past it `type_text` fails instead of reporting success (microseconds) |
 | `pasteVerifyPollUs` | `250000` | Gap between OCR reads while waiting for a pasted run (microseconds) |
 | `pasteVerifyWindowChars` | `6` | Trailing OCR-readable characters of the entered line, ending with the pasted run, that must appear on screen to count a paste as delivered |
+| `networkChangeTimeoutUs` | `5000000` | Longest wait after `set_network` taps a tile or switch for it to read the asked state; it is read again every `toolSettlingDelayUs` until then. Wi-Fi's tile keeps showing the network a moment while it disconnects (microseconds) |
 | `clickHoldUs` | `80000` | Click hold duration in microseconds |
 | `doubleTapHoldUs` | `40000` | Hold duration per tap in a double-tap gesture (microseconds) |
 | `doubleTapGapUs` | `50000` | Gap between taps in a double-tap (microseconds) |

@@ -4,7 +4,7 @@ The recorder, doctor and keyboard configuration commands, and the HTTP server fo
 
 ### Conventions
 
-`mirroir-mcp` with no command is the MCP server. `mirroir-mcp --help` lists the commands, and `mirroir-mcp --version` prints the version. Every command behaves the same way:
+`mirroir-mcp` with no command is the MCP server. `mirroir-mcp --help` lists the commands, and `mirroir-mcp --version` prints the version. Every install (npm, Homebrew, the install script) also adds `mirroir`, the same program under a shorter name, so `mirroir doctor` and `mirroir-mcp doctor` are one command. Every command behaves the same way:
 
 - `--help` or `-h`, anywhere on the line, prints that command's usage and exits 0 without running anything.
 - An option the command does not define is refused by name with exit code **2**, and nothing runs. Options are never abbreviated: `--dry-ru` is refused, not read as `--dry-run`.
@@ -76,6 +76,10 @@ A character the layout types with a dead key (`ê` is `^` then `e` on Canadian-C
 
 `mirroir-mcp ax-capture <name> [--out <dir>] [--watch <seconds>]` saves what Accessibility reports for the iPhone Mirroring window as a tagged test fixture. It reads only; nothing is pressed. See [Testing](testing.md#capturing-the-mirroring-window) for when to use it and what to check before committing a capture.
 
+### Recognize text
+
+`mirroir-mcp recognize-text <image>` reads the text in a PNG or JPEG with Apple Vision, using your OCR settings, and prints the lines as JSON (text, normalized bounding box with a bottom-left origin, confidence). mirroir runs it itself to read a frame in a fresh process when its own Vision reads keep failing ([Troubleshooting](troubleshooting.md)).
+
 ### Serve
 
 By default mirroir-mcp talks to one MCP client on standard input and output and opens no network port. `mirroir-mcp serve` is for the other case: the agent runs on another machine and the phone is next to your Mac.
@@ -105,6 +109,7 @@ Any client that speaks MCP Streamable HTTP and can send a fixed `Authorization` 
 
 What to know before relying on it:
 
+- **Closing the connection cancels the call.** `run_steps`, `scroll_to`, `measure` and `generate_skill` explore stop at their next check, between two actions on the phone, never during one. A tool call that sends a `progressToken` and accepts `text/event-stream` gets its progress as events, then its response as the last event; every other reply is one JSON body. Over stdio, a `notifications/cancelled` does the same.
 - **Permissions are the same file.** `serve` reads `permissions.json` as the stdio server does: `.mirroir-mcp/` in the directory it was started from, then `~/.mirroir-mcp/`. launchd starts the agent in `/`, so the agent uses the one in your home; started by hand inside a project, `serve` uses that project's. It refuses `--dangerously-skip-permissions`. With no file, only the read-only tools are served.
 - **Why a LaunchAgent.** Screen capture and input belong to the Mac's login session. launchd starts the agent inside that session; a command typed into an SSH shell runs outside it. `install-agent` only writes the file and prints the two `launchctl` commands; it starts nothing.
 - **The Mac must be logged in and unlocked, with iPhone Mirroring connected.** Measured on macOS 26.5: once the screen locks, `status` says "the Mac's screen is locked" and asks for it to be unlocked; capture keeps working for about 30 seconds, then fails until the Mac is unlocked, and recovers on its own after. This is for a Mac that stays awake next to the phone, not for an unattended one.
