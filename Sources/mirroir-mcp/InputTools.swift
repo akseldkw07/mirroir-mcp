@@ -13,7 +13,7 @@
  * License for the specific language governing permissions and limitations under
  * the License.
  */
-// ABOUTME: Registers input-related MCP tools: swipe, drag, type_text, press_key, long_press, double_tap, shake (tap is in TapTools).
+// ABOUTME: Registers input-related MCP tools: swipe, drag, type_text, long_press, double_tap, shake (tap is in TapTools, press_key in PressKeyTool).
 // ABOUTME: Each tool maps MCP JSON-RPC calls to the InputSimulation subsystem via CGEvent.
 
 import Foundation
@@ -69,11 +69,13 @@ extension MirroirMCP {
                 at most 140 points per second, so the default 300 ms over a third \
                 of the screen takes about 2 s. \
                 The result says whether the screen moved (diff_ratio below the \
-                status bar); a swipe that moved nothing is retried once.
+                status bar); a swipe that moved nothing is retried once. \
+                Give `expect` with the text the swipe should reveal: the call waits for it \
+                and fails when it never shows.
                 """,
             inputSchema: [
                 "type": .string("object"),
-                "properties": .object([
+                "properties": .object(ActionExpectation.properties.merging([
                     "from_x": .object([
                         "type": .string("number"),
                         "description": .string("Start X coordinate"),
@@ -96,7 +98,7 @@ extension MirroirMCP {
                             "Duration of swipe in milliseconds (default: 300); a drag below flick speed is slowed to at most 140 points per second"),
                     ]),
                     "cursor_mode": cursorModeSchema,
-                ]),
+                ]) { $1 }),
                 "required": .array([
                     .string("from_x"), .string("from_y"),
                     .string("to_x"), .string("to_y"),
@@ -117,6 +119,11 @@ extension MirroirMCP {
                 }
 
                 let duration = args["duration_ms"]?.asInt() ?? EnvConfig.defaultSwipeDurationMs
+                let expectation: ActionExpectation?
+                switch ActionExpectation.parse(args) {
+                case .success(let parsed): expectation = parsed
+                case .failure(let refusal): return .error(refusal.message)
+                }
 
                 let cursorMode: CursorMode?
                 switch parseCursorMode(args) {
@@ -132,8 +139,11 @@ extension MirroirMCP {
                                 durationMs: duration, cursorMode: cursorMode)
                 }
                 if case .failed(let error) = outcome { return .error(error) }
-                return .text(SwipeVerifier.message(
-                    outcome, from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY)) ?? "")
+                let reply = SwipeVerifier.message(
+                    outcome, from: CGPoint(x: fromX, y: fromY), to: CGPoint(x: toX, y: toY)) ?? ""
+                guard let expectation else { return .text(reply) }
+                return ActionExpectation.check(
+                    expectation, after: reply, ctx: ctx, registry: registry, policy: policy)
             }
         ))
 
@@ -294,61 +304,7 @@ extension MirroirMCP {
             }
         ))
 
-        // press_key — send a special key press with optional modifiers
-        server.registerTool(MCPToolDefinition(
-            name: "press_key",
-            description: """
-                Send a key press to the mirrored iPhone with optional modifiers. \
-                The target is brought to the front for the key, then the previous \
-                front app gets the front back. \
-                Supported keys: return, escape, tab, delete, space, up, down, left, right, \
-                or any single character (a-z, 0-9, etc.) for shortcuts. \
-                Optional modifiers: command, shift, option, control. \
-                Examples: press Return to confirm, Escape to cancel, Ctrl+Cmd+Z for shake.
-                """,
-            inputSchema: [
-                "type": .string("object"),
-                "properties": .object([
-                    "key": .object([
-                        "type": .string("string"),
-                        "description": .string(
-                            "Key name: return, escape, tab, delete, space, up, down, left, right, or a single character"),
-                    ]),
-                    "modifiers": .object([
-                        "type": .string("array"),
-                        "items": .object([
-                            "type": .string("string"),
-                        ]),
-                        "description": .string(
-                            "Optional modifier keys: command, shift, option, control"),
-                    ]),
-                ]),
-                "required": .array([.string("key")]),
-            ],
-            handler: { args in
-                let (ctx, err) = registry.resolveForTool(args)
-                guard let ctx else { return err! }
-                let input = ctx.input
-
-                guard let keyName = args["key"]?.asString() else {
-                    return .error("Missing required parameter: key (string)")
-                }
-
-                let modifiers = args["modifiers"]?.asStringArray() ?? []
-
-                let result = input.pressKey(
-                    keyName: keyName, modifiers: modifiers
-                )
-                guard result.success else {
-                    return .error(result.error ?? "Failed to press key")
-                }
-
-                if modifiers.isEmpty {
-                    return .text("Pressed \(keyName)")
-                }
-                return .text("Pressed \(modifiers.joined(separator: "+"))+\(keyName)")
-            }
-        ))
+        registerPressKeyTool(server: server, registry: registry, policy: policy)
 
         // long_press — hold tap at coordinates for a configurable duration
         server.registerTool(MCPToolDefinition(

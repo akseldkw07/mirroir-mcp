@@ -168,6 +168,7 @@ public struct PermissionPolicy: Sendable {
         "scroll_to_top",
         "read_scrolling_list",
         "reset_app",
+        "restart_mirroring",
         "measure",
         "set_network",
         "switch_target",

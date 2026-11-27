@@ -1,6 +1,6 @@
 # Tools Reference
 
-All 44 tools exposed by the MCP server. Mutating tools require [permission](permissions.md) to appear in `tools/list`.
+All 45 tools exposed by the MCP server. Mutating tools require [permission](permissions.md) to appear in `tools/list`.
 
 ## Tool List
 
@@ -11,17 +11,17 @@ All 44 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `listen` | `seconds`?, `language`? | Hear what the phone plays, as text: records the sound iPhone Mirroring plays for up to `seconds` (1 to 60, default 10; it stops early when nothing plays from the start or once the sound has ended) and transcribes it on the Mac in `language` (BCP-47, default the Mac's). Read-only; needs macOS 26. See [Listening](#listening). |
 | `start_recording` | `output_path`? | Start video recording of the mirrored screen |
 | `stop_recording` | — | Stop recording and return the .mov file path. A recording that already ended on its own (display sleep can end it) still returns its file, with a note that the video stops early; `start_recording` refuses to start another until that file is collected |
-| `tap` | `text`? or `x`, `y`; `image_size`?, `image_region`?, `cursor_mode`? | Tap visible text found by OCR (`text`; a miss lists the text on screen), or tap at coordinates relative to the mirroring window. With `image_size`, `x` and `y` are a position in a screenshot and are converted to window points |
+| `tap` | `text`? or `x`, `y`; `image_size`?, `image_region`?, `cursor_mode`?, `expect`?, `expect_timeout`? | Tap visible text found by OCR (`text`; a miss lists the text on screen), or tap at coordinates relative to the mirroring window. With `image_size`, `x` and `y` are a position in a screenshot and are converted to window points See [Expectations](#expectations). |
 | `double_tap` | `x`, `y`, `cursor_mode`? | Two rapid taps for zoom/text selection |
 | `long_press` | `x`, `y`, `duration_ms`?, `cursor_mode`? | Hold tap for context menus (default 500ms) |
-| `swipe` | `from_x`, `from_y`, `to_x`, `to_y`, `duration_ms`?, `cursor_mode`? | Swipe between two points (default 300ms). At 2000 pt/s or faster it is a flick that pages feeds; slower, a drag that moves the content as far as the finger, at most 140 pt/s. Compares captures before and after and says whether the screen moved (`diff_ratio`, status bar ignored, a few-pixel overscroll release doesn't count); a swipe that moved nothing is retried once |
+| `swipe` | `from_x`, `from_y`, `to_x`, `to_y`, `duration_ms`?, `cursor_mode`?, `expect`?, `expect_timeout`? | Swipe between two points (default 300ms). At 2000 pt/s or faster it is a flick that pages feeds; slower, a drag that moves the content as far as the finger, at most 140 pt/s. Compares captures before and after and says whether the screen moved (`diff_ratio`, status bar ignored, a few-pixel overscroll release doesn't count); a swipe that moved nothing is retried once. See [Expectations](#expectations). |
 | `drag` | `from_x`, `from_y`, `to_x`, `to_y`, `duration_ms`?, `cursor_mode`? | Slow sustained drag for icons, sliders (default 1000ms) |
 | `touch` | `action`, `x`?, `y`?, `duration_ms`? | Hold one finger across calls: `begin` at (x, y), `move` to (x, y) over `duration_ms` (1-5000ms, default 100ms), `end`, or `cancel` (always releases the button). Each move is placed against the window's live frame; if the window changed size (iPhone rotated, Mirroring resized or restarted) the touch is released and the move refused. Other pointing tools refuse while it is held; released automatically after 30s idle and when the server exits |
 | `pinch` | `x`, `y`, `scale`, `duration_ms`? | Two-finger pinch centred at (x, y): `scale` > 1 spreads the fingers (zoom in), < 1 pinches them (zoom out); the spread ends at exactly `scale` times its start (0.1-10, 100-5000ms, default 500ms). Reaches iOS as a UIKit two-finger gesture (Maps, Photos); games that read raw touches may ignore it. Needs a Mac with a built-in trackpad or a Magic Trackpad; refused while a touch is held |
 | `rotate` | `x`, `y`, `degrees`, `duration_ms`? | Two-finger rotation centred at (x, y) by `degrees`: positive counter-clockwise, negative clockwise (non-zero, up to 360 either way, 100-5000ms, default 500ms). Same delivery and trackpad requirement as `pinch` |
 | `hold_keys` | `keys`, `duration_ms`?, `drag`? | Hold 1-6 keys for `duration_ms` (100-10000ms, default 1000ms), then release everything in reverse order. Keys are single unshifted characters (`w`), modifiers (`shift`, `command`, `option`, `control`), or named keys (`space`, `up`, ...). Plain keys re-post key-down every 50ms like a held physical key; modifiers are held without repeating. Optional `drag` `{from_x, from_y, to_x, to_y, button: left\|right}` holds that mouse button across the same duration. For games that switch to mouse/keyboard controls (e.g. Roblox: `w` walks while a right drag turns the camera); touch-only games ignore keys. Refused while a touch is held or when the mirroring window is not the frontmost app; stops early and releases everything if focus leaves it mid-hold |
 | `type_text` | `text`, `clear`?, `keyboard_layout`? | Type text — adds to what the field holds; `clear: true` empties the focused field first (Cmd+A, then Delete; clear only a field you just focused, since with none focused Cmd+A acts on whatever the app selects) — sends keystrokes to iPhone Mirroring. `keyboard_layout` names the connected iPhone's layout when `keyboardLayout` lists several ([limitations](limitations.md#iphones-with-different-keyboards-on-one-mac)). Characters with no key are pasted one run at a time and each paste is confirmed by OCR; one not seen (or unreadable, like emoji) returns an error ([limitations](limitations.md#clipboard-paste-is-confirmed-by-ocr)) |
-| `press_key` | `key`, `modifiers`? | Send a special key (return, escape, tab, delete, space, arrows) with optional modifiers (command, shift, option, control) |
+| `press_key` | `key`, `modifiers`?, `expect`?, `expect_timeout`? | Send a special key (return, escape, tab, delete, space, arrows) with optional modifiers (command, shift, option, control). See [Expectations](#expectations). |
 | `shake` | — | Trigger shake gesture (Ctrl+Cmd+Z) for undo/dev menus |
 | `launch_app` | `name` | Open app by name via Spotlight search; opens the top result only when it is an app (tapping its tile, or Return when no tile is read), so a missing app fails instead of opening a web or App Store result. When Spotlight never shows the typed name (on iOS 26 it can take typing only once per iPhone Mirroring session), it closes Spotlight and taps the Home Screen icon labeled exactly `name` on the page Home shows (no page is turned); apps on other pages, in folders, the Dock or only the App Library are not found that way |
 | `open_url` | `url` | Open URL in Safari |
@@ -33,6 +33,7 @@ All 44 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `scroll_to_top` | — | Scroll the current list back to its top by tapping the status-bar clock until two taps in a row change nothing (up to 4 taps, so a lost tap isn't taken for the top). Reports whether the top was verified |
 | `read_scrolling_list` | `max_pages`?, `from_top`? | Every screen of the current list as overlapping page images, top to bottom (from the top unless `from_top: false`). Stops at the end of the list or `max_pages`; the summary names pages that don't overlap |
 | `reset_app` | `name` | Force-quit an app via the App Switcher |
+| `restart_mirroring` | `timeout`? | Quit iPhone Mirroring on the Mac, open it again and wait until it is connected (default 60 s). For input that stops landing. It ends the session, so ask the user first. An app that is not running is not opened; when it opens without connecting, the reply says what its window asks for |
 | `measure` | `action`, `until`, `max_seconds`?, `name`? | Time a screen transition after an action |
 | `run_steps` | `steps`, `task`? | Run several proven steps in one call, in the [step grammar](#step-types) (`"tap: <text on screen>"`, `"tap: @324,113"` for a point, `"type: calculator"`, `"wait_for: Get"`, `"home"`). Every step is checked against the permission policy before the first runs; the run stops at the first failure and the reply ends with the text on screen With `task` (a few words, one line, no double quotes), a run whose every step passed is added to that task, and the reply ends with a SKILL.md draft of every passing run given the same `task` since the server started, ready to save under `~/.mirroir-mcp/skills/`. A failed run is not added. The server keeps 20 tasks and 200 steps per task, in memory only. |
 | `set_network` | `mode` | Toggle network settings (airplane, Wi-Fi, cellular) via Control Center on iOS 27, else Settings |
@@ -51,9 +52,15 @@ All 44 tools exposed by the MCP server. Mutating tools require [permission](perm
 | `save_note` | `topic`, `note`, `replaces`? | Save one short dated note for future sessions under a topic, usually the app's name |
 | `save_compiled` | `skill_name`, `emit`?, `output_dir`? | Save accumulated compiled steps as .compiled.json next to the source skill (the speed cache `mirroir test` replays). `emit: true` also writes the walk into the consumer repo's `.mirroir/apps/<app>/` as a runnable iOS scenario — its app is the one the skill's opening `launch:` names; no `.compiled.json` is written into `.mirroir/`. See [Compiled Skills](compiled-skills.md#emitting-the-walk-into-mirroir). |
 
+
+### Expectations
+
+`tap`, `swipe` and `press_key` take `expect`, the text the action should lead to. After the action the call waits for that text exactly as a `wait_for` step does, up to `expect_timeout` seconds (default: the `waitForTimeoutSeconds` setting), and the reply adds that check. The call fails when the text never shows, so an agent learns that a tap did nothing without a separate `describe_screen`. An `expect` that is empty, or an `expect_timeout` given alone or below 1, is refused before the action is sent. For other actions, `run_steps` with a `wait_for` step does the same.
 ## Coordinates
 
 Coordinates are in points relative to the mirroring window's top-left corner. Use `describe_screen` to get exact tap coordinates — it detects both text (via Vision OCR) and icons (via YOLO CoreML, if a model is installed). The grid overlay helps target any remaining unlabeled elements. A raw `screenshot` is in pixels, and the factor between pixels and points is not fixed: it follows the display, the `scale` argument and the `region` crop. Each screenshot's reply states its pixel size and that factor. To tap something only the image shows, pass its position in the image to `tap` as `x` and `y` with `image_size` (and `image_region` when the screenshot was cropped), and the point is converted for you.
+
+Coordinates belong to the window size they were read at. When the window has changed size since the last `describe_screen` or `screenshot` of that target (resized by hand, or reopened at another size), a tap, swipe, drag, long press or double tap at coordinates is refused and nothing is sent: describe the screen again and use the new coordinates. A tap by `text` reads the screen itself and is never refused for this.
 
 ## Describe Screen
 
@@ -269,6 +276,25 @@ A screen shows what is written; `listen` gets what is said. Start a reel, a vide
 Those eight tools drive something only the iPhone has: Spotlight, the Home Screen, the App Switcher, the iOS shake shortcut. On a target without one, the tool (and the matching step in `run_steps` or a skill) is refused with a message that starts `<tool> is unsupported on target '<name>'`, says why, says that nothing was sent, and names the targets that do have it. It is never emulated: an iOS shortcut sent to a Mac app would do something else there.
 
 `switch_target` changes the active target for all subsequent tool calls. Use it in skills with the `target:` step to automate workflows that span multiple devices or windows: `target: { kind: ios }` selects the iPhone Mirroring target, and `target: { kind: macos, name: "<targets.json name>" }` selects a configured desktop window. The map is the same shape `mirroir-run` parses, so one scenario file reads the same on both sides.
+
+### A phone on another Mac
+
+A `mirroir-remote` target is another Mac's `mirroir-mcp serve` (see [CLI](cli.md)), so the phone paired with that Mac is a target of this server:
+
+```json
+{
+  "targets": {
+    "iphone": { "type": "iphone-mirroring" },
+    "xr": { "type": "mirroir-remote", "url": "http://127.0.0.1:7457/mcp", "token_env": "XR_SERVE_TOKEN" }
+  }
+}
+```
+
+- **Calls are forwarded.** Once `switch_target` makes it active, or when a call names it in `target`, every tool call goes to that serve after this Mac's own permissions allowed it. The screen is read there, its own permissions and driving check apply, and its reply comes back as it wrote it. `target` is not forwarded: the remote answers for its own active target.
+- **Some tools stay here.** `list_targets`, `switch_target` and the tools that only read or write files on this Mac (`list_skills`, `get_skill`, `get_notes`, `save_note`) never leave it.
+- **The token is not in the file.** `token_env` names the environment variable this server reads the serve's token from at each call; the call is refused, and nothing is sent, when it is not set.
+- **Plain HTTP only to this Mac.** `serve` listens on loopback, so reach the other Mac with an SSH port forward (`ssh -N -L 7457:127.0.0.1:7457 other-mac`) and point `url` at `127.0.0.1`. Any other host needs `https`: a token sent in the clear to another machine is refused when the config is read.
+- **Not yet:** `mirroir test`, compiled replay and a skill's `target:` step run on this Mac's targets only.
 
 ## Calibrate Component
 

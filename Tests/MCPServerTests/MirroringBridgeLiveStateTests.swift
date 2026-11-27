@@ -39,7 +39,16 @@ final class ScriptedMirroringProbe: MirroringSystemProbing, @unchecked Sendable 
         }
     }
 
-    func processID(bundleID: String) -> pid_t? { lock.withLock { pid } }
+    func processID(bundleID: String) -> pid_t? {
+        lock.withLock {
+            if missedLookups > 0 { missedLookups -= 1; return nil }
+            return pid
+        }
+    }
+
+    /// Lookups that miss the running app before it is found again.
+    private var missedLookups = 0
+    func set(missedLookups: Int) { lock.withLock { self.missedLookups = missedLookups } }
 
     func mainWindow(pid requested: pid_t) -> MirroringAXWindow? {
         lock.withLock { requested == pid ? axWindow : nil }
@@ -111,10 +120,35 @@ final class ScriptedMirroringProbe: MirroringSystemProbing, @unchecked Sendable 
     var launchedBundleIDs: [String] { lock.withLock { launches } }
 
     func launchInBackground(bundleID: String) -> Bool {
-        lock.withLock {
+        let (accepted, launched) = lock.withLock {
             launches.append(bundleID)
-            return true
+            return (launchAccepted, onLaunch)
         }
+        if accepted { launched?() }
+        return accepted
+    }
+
+    /// Whether a background launch is accepted, and what it does to the scripted app.
+    private var launchAccepted = true
+    private var onLaunch: (() -> Void)?
+    func set(launchAccepted: Bool) { lock.withLock { self.launchAccepted = launchAccepted } }
+    func set(onLaunch: (() -> Void)?) { lock.withLock { self.onLaunch = onLaunch } }
+
+    /// The PIDs a quit was requested for, whether it is accepted, and what it does.
+    private var quits: [pid_t] = []
+    private var quitAccepted = true
+    private var onQuit: (() -> Void)?
+    var quitPIDs: [pid_t] { lock.withLock { quits } }
+    func set(quitAccepted: Bool) { lock.withLock { self.quitAccepted = quitAccepted } }
+    func set(onQuit: (() -> Void)?) { lock.withLock { self.onQuit = onQuit } }
+
+    func quit(pid requested: pid_t) -> Bool {
+        let (accepted, quitting) = lock.withLock {
+            quits.append(requested)
+            return (quitAccepted, onQuit)
+        }
+        if accepted { quitting?() }
+        return accepted
     }
 }
 
@@ -128,7 +162,8 @@ final class MirroringBridgeLiveStateTests: XCTestCase {
     private static let menuSliver = CGRect(x: 0, y: 0, width: 1710, height: 34)
 
     private let probe = ScriptedMirroringProbe()
-    private lazy var bridge = MirroringBridge(bundleID: "com.example.mirroring", probe: probe)
+    private lazy var bridge = MirroringBridge(
+        bundleID: "com.example.mirroring", probe: probe, quitRecheckSeconds: 0)
 
     /// A connected mirroring window: the hosting view has no children.
     private func liveWindow(_ frame: CGRect) -> MirroringAXWindow {
@@ -189,6 +224,23 @@ final class MirroringBridgeLiveStateTests: XCTestCase {
         XCTAssertEqual(bridge.getState(), .connected)
         XCTAssertFalse(bridge.wasQuit)
         XCTAssertNil(bridge.sessionBlock())
+    }
+
+    /// Seen 2026-11-26: a swipe was refused as "the app is gone" while iPhone Mirroring
+    /// ran under one PID throughout. One missed lookup is not a quit.
+    func testALookupThatMissesOnceIsNotAQuit() {
+        show(pid: 300, frame: Self.portrait)
+        XCTAssertEqual(bridge.getState(), .connected)
+
+        probe.set(missedLookups: 1)
+        XCTAssertFalse(bridge.wasQuit)
+        probe.set(missedLookups: 1)
+        XCTAssertEqual(bridge.getState(), .connected)
+        probe.set(missedLookups: 1)
+        XCTAssertNil(bridge.sessionBlock())
+
+        probe.set(pid: nil, axWindow: nil, entries: [])
+        XCTAssertTrue(bridge.wasQuit, "an app gone on both lookups was quit")
     }
 
     func testActivateRaisesTheLiveProcessWindow() {
