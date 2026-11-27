@@ -54,6 +54,7 @@ keyboard path are fine; `launch_app`'s own steps are what fail.
 | 2026-11-22 | `295ddbf` (0.50.3), mirror window 249x552 pt | 0 of 3 | 3 of 3 | 2 of 2 |
 | 2026-11-25 | `2fe5c38` (0.51.0, PR #30), mirror window 238x528 pt | not tried | 3 of 7 | 2 of 3 |
 | 2026-11-25 | `5d8672d` (`main`, 0.50.3), same window | not tried | 4 of 6 | 2 of 2 |
+| 2026-11-27 | `10ad9f2` (PR #30 as merged, upstream's carnet#99 Return check), mirror window 231x512 pt | 1 of 1 | 1 of 1 | 5 of 5 |
 
 The one failure (TikTok, fourth launch in a row, 2026-11-18): "Spotlight did not show
 'TikTok' after it was typed ... Opening it from its Home Screen icon failed too: the Home
@@ -74,5 +75,13 @@ for a launch that works. Later launches in the same process worked, apart from o
 launch on `2fe5c38`. So the first launch after a server start is its own failure, present on
 `main` and not new in 0.51.0. A Home Screen tap on "citibike" opened Citi Bike the first time.
 
-Still open: steps 1 to 3. Step 3 now blocks TikTok at this window size. Also open: the
-first launch after a server start fails (2026-11-25 note above).
+2026-11-27: every launch from the Home Screen worked, the first of each server process
+included, and TikTok opened (read correctly this time). A second `launch_app` for Reloj while
+Reloj was already open did not: twice the call said "Launched 'Reloj'" and left the phone on
+Spotlight's results with "Reloj - Abrir" in the field (once on `10ad9f2`, once on the build
+from before PR #30's last 18 commits), and once it failed with "Spotlight did not open (or the
+screen could not be read), so 'Reloj' was not searched for; Return was not pressed."
+
+Still open: steps 1 to 3 and the first launch after a server start (2026-11-25 note; not seen
+on 2026-11-27). Also open: a launch of the app that is already in front reports "Launched"
+while Spotlight stays up (2026-11-27 note above).
